@@ -118,8 +118,7 @@ class YouTubeUploader:
                 channels.append({
                     'channel_id': channel['id'],
                     'title': channel['snippet']['title'],
-                    'description': channel['snippet'].get('description', ''),
-                    'subscribers_hidden': channel['statistics'].get('hiddenSubscriberCount', False)
+                    'description': channel['snippet'].get('description', '')
                 })
             
             return channels
