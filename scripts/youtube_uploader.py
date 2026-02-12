@@ -61,7 +61,35 @@ class YouTubeUploader:
         print("✅ YouTube API 인증 완료")
         return True
     
-    def upload_video(self, video_path, script_data, thumbnail_path=None):
+    def get_my_channels(self):
+        """내 모든 YouTube 채널 목록 조회"""
+        try:
+            if not self.youtube:
+                if not self.authenticate():
+                    return None
+            
+            request = self.youtube.channels().list(
+                part='snippet,contentDetails',
+                mine=True,
+                maxResults=10
+            )
+            response = request.execute()
+            
+            channels = []
+            for channel in response.get('items', []):
+                channels.append({
+                    'channel_id': channel['id'],
+                    'title': channel['snippet']['title'],
+                    'description': channel['snippet'].get('description', ''),
+                    'subscribers_hidden': channel['statistics'].get('hiddenSubscriberCount', False)
+                })
+            
+            return channels
+        except Exception as e:
+            print(f"❌ 채널 조회 오류: {e}")
+            return None
+    
+    def upload_video(self, video_path, script_data, thumbnail_path=None, channel_id=None):
         """비디오를 YouTube에 업로드"""
         if not self.youtube:
             if not self.authenticate():

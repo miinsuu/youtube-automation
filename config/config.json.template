@@ -3,6 +3,11 @@
     "api_key": "YOUR_GEMINI_API_KEY_HERE",
     "model": "gemini-2.0-flash-exp"
   },
+  "youtube": {
+    "client_secrets_file": "config/client_secrets.json",
+    "credentials_file": "config/youtube_credentials.json",
+    "target_channel_id": null
+  },
   "tts": {
     "language": "ko-KR",
     "voice": "ko-KR-SunHiNeural",

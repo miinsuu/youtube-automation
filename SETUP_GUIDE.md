@@ -11,7 +11,61 @@
 ## 🔧 1단계: Google Cloud 프로젝트 설정
 
 ### 1.1 프로젝트 생성
-1. [Google Cloud Console](https://console.cloud.google.com/) 접속
+1. [Google Cloud Console](https://---
+
+## 🚀 실전 운영 시작하기
+
+### 🎯 여러 채널에 업로드하기 (채널 선택)
+
+2개 이상의 YouTube 채널이 있다면:
+
+#### 📌 채널 ID 찾기 (추천)
+
+1. **YouTube Studio** 방문
+   https://youtube.com/studio
+
+2. 좌측 메뉴 → **설정** → **채널 정보** 클릭
+
+3. **채널 ID** 찾기
+   ```
+   형식: UC로 시작하는 24자 코드
+   예: UCxxxxxxxxxxxxxxxx
+   ```
+
+4. 모든 채널에 대해 1-3 반복 (채널마다 다른 ID)
+
+#### 설정 방법
+
+**config.json 수정:**
+```bash
+vim config/config.json
+# 또는
+code config/config.json
+```
+
+원하는 채널의 ID를 입력:
+```json
+"youtube": {
+    "client_secrets_file": "config/client_secrets.json",
+    "credentials_file": "config/youtube_credentials.json",
+    "target_channel_id": "UCxxxxxxxxxxxxxxxx"  // ← 여기에 채널 ID 입력
+}
+```
+
+**저장 후 GitHub 푸시:**
+```bash
+git add config/config.json
+git commit -m "Set target YouTube channel: [채널 이름]"
+git push
+```
+
+**채널 변경하려면:**
+- `target_channel_id` 값만 바꾼 후 다시 push하면 됨
+- 각 채널별로 다른 `config.json` 파일을 사용하려면 GitHub에서 별도 branch 생성 가능
+
+---
+
+### 1단계: 로컬에서 최종 테스트le.cloud.google.com/) 접속
 2. 상단의 프로젝트 선택 → "새 프로젝트" 클릭
 3. 프로젝트 이름 입력 (예: "YouTube Shorts Automation")
 4. "만들기" 클릭
@@ -143,6 +197,52 @@ push 후 GitHub 저장소에서:
 3. "I understand my workflows, go ahead and enable them" 버튼이 보이면 클릭
    - (이 버튼은 첫 push 후에만 나타나며, 안 보이면 이미 활성화된 것)
 
+### 4.4 자동 업로드 활성화
+
+GitHub Actions가 설정되면 **자동으로 스케줄대로 실행**됩니다!
+
+#### 현재 상태 확인
+```bash
+# config.json에서 upload_enabled 확인
+cat config/config.json | grep upload_enabled
+```
+
+#### 실제 업로드 활성화 (테스트 완료 후)
+```bash
+# config.json 수정
+# "upload_enabled": false → true 로 변경
+```
+
+또는 직접 수정:
+```json
+"scheduler": {
+    "upload_enabled": true,  // false → true로 변경
+    "weekday_times": ["07:00", "12:00", "18:00", "22:00"],
+    "weekend_times": ["09:00", "12:00", "15:00", "18:00", "22:00"]
+}
+```
+
+수정 후 GitHub에 push:
+```bash
+git add config/config.json
+git commit -m "Enable YouTube upload"
+git push
+```
+
+#### 🎯 자동화 동작 방식
+
+**GitHub Actions가 자동으로:**
+1. ⏰ **스케줄대로 실행** (월-금 4회, 토-일 5회)
+2. 📝 **스크립트 자동 생성** (Gemini AI)
+3. 🎤 **음성 자동 생성** (Edge TTS)
+4. 🎬 **비디오 자동 생성** (배경+자막)
+5. 📤 **YouTube 자동 업로드** (upload_enabled: true일 때)
+
+#### 확인 방법
+- GitHub 저장소 → **Actions** 탭
+- 각 실행 결과 확인 가능
+- 생성된 비디오는 Artifacts에 저장됨
+
 ---
 
 ## 🖥️ 5단계: 로컬 스케줄러 실행 (대안)
@@ -199,7 +299,102 @@ launchctl start com.youtube.shorts
 
 ---
 
-## 📅 스케줄 요약
+## � 실전 운영 시작하기
+
+### 1단계: 로컬에서 최종 테스트
+
+```bash
+cd /Users/minsu/Downloads/youtube-automation
+source venv/bin/activate
+
+# 1. 업로드 없이 비디오만 생성 테스트
+python main.py --test
+
+# 2. 생성된 비디오 확인
+open output/videos/video_*.mp4
+
+# 3. 실제 YouTube 업로드 테스트 (1개만)
+# config.json에서 upload_enabled: true로 변경 후
+python main.py
+```
+
+### 2단계: GitHub에서 자동화 활성화
+
+#### 2.1 config.json 수정
+```bash
+# upload_enabled를 true로 변경
+vim config/config.json
+# 또는
+code config/config.json
+```
+
+```json
+"scheduler": {
+    "upload_enabled": true,  // ← 여기를 true로
+    "weekday_times": ["07:00", "12:00", "18:00", "22:00"],
+    "weekend_times": ["09:00", "12:00", "15:00", "18:00", "22:00"]
+}
+```
+
+#### 2.2 GitHub에 push
+```bash
+git add config/config.json
+git commit -m "Enable automatic YouTube upload"
+git push
+```
+
+#### 2.3 GitHub Actions 확인
+1. GitHub 저장소 → **Actions** 탭
+2. 다음 실행 시간 확인
+3. 실행 결과 로그 확인
+
+### 3단계: 모니터링
+
+#### GitHub Actions에서 확인
+- **Actions** 탭 → 각 워크플로우 실행 클릭
+- 로그에서 성공/실패 확인
+- Artifacts에서 생성된 비디오 다운로드 가능
+
+#### YouTube에서 확인
+- YouTube Studio → 콘텐츠
+- 업로드된 영상 확인
+- 조회수, 댓글 등 모니터링
+
+### 4단계: 스케줄 조정 (선택사항)
+
+스케줄을 변경하려면:
+
+```bash
+# config.json 수정
+vim config/config.json
+```
+
+```json
+"scheduler": {
+    "upload_enabled": true,
+    "weekday_times": ["08:00", "14:00", "20:00"],  // 원하는 시간으로
+    "weekend_times": ["10:00", "16:00", "22:00"]   // 변경 가능
+}
+```
+
+```bash
+git add config/config.json
+git commit -m "Update schedule times"
+git push
+```
+
+또는 `.github/workflows/youtube-automation.yml` 수정:
+```yaml
+on:
+  schedule:
+    - cron: '0 23 * * 0-4'  # 월-금 08:00 KST
+    - cron: '0 5 * * 0-4'   # 월-금 14:00 KST
+    # ... 원하는 cron 추가
+```
+
+---
+
+## �📅 스케줄 요약
 
 | 요일 | 업로드 시간 |
 |-----|-----------|
