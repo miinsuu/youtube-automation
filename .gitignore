@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Secrets & API Keys (절대 커밋하지 말 것!)
+config/client_secrets.json
+config/youtube_credentials.json
+config/config.json
+*.json.secret
+*.key
+
+# Output files
+output/videos/*.mp4
+output/audio/*.mp3
+output/images/*.png
+output/images/*.jpg
+output/*.json
+
+# Logs
+logs/*.log
+logs/*.json
+*.log
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files
+test_*.mp4
+test_*.mp3
+test_*.png

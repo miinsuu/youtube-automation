@@ -2,6 +2,21 @@
 
 팩트/정보 쇼츠 영상을 자동으로 생성하고 YouTube에 업로드하는 완전 자동화 시스템입니다.
 
+## ⚠️ 보안 주의사항
+
+**🔒 이 프로젝트를 GitHub에 올릴 때는 반드시 Private 저장소로 설정하세요!**
+
+민감한 정보가 포함되어 있습니다:
+- API 키 (Gemini, Pexels)
+- YouTube OAuth 인증 정보
+- `config/config.json` - 실제 API 키 포함
+- `config/client_secrets.json` - YouTube OAuth 클라이언트 시크릿
+- `config/youtube_credentials.json` - YouTube 액세스 토큰
+
+`.gitignore`가 이 파일들을 자동으로 제외하지만, **절대 Public 저장소로 만들지 마세요!**
+
+---
+
 ## 🌟 주요 기능
 
 ✅ **AI 대본 자동 생성** - OpenAI GPT를 사용한 바이럴 스크립트 생성  

@@ -5,7 +5,6 @@ Google YouTube Data API v3를 사용하여 영상을 자동으로 업로드합�
 
 import json
 import os
-import pickle
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -28,10 +27,15 @@ class YouTubeUploader:
         """YouTube API 인증"""
         creds = None
         
-        # 저장된 인증 정보 로드
+        # 저장된 인증 정보 로드 (JSON 형식)
         if os.path.exists(self.credentials_file):
-            with open(self.credentials_file, 'rb') as token:
-                creds = pickle.load(token)
+            try:
+                creds = Credentials.from_authorized_user_file(
+                    self.credentials_file, self.SCOPES
+                )
+            except Exception as e:
+                print(f"⚠️ 인증 파일 로드 실패: {e}")
+                creds = None
         
         # 인증 정보가 없거나 만료된 경우
         if not creds or not creds.valid:
@@ -49,9 +53,9 @@ class YouTubeUploader:
                 )
                 creds = flow.run_local_server(port=0)
             
-            # 인증 정보 저장
-            with open(self.credentials_file, 'wb') as token:
-                pickle.dump(creds, token)
+            # 인증 정보 저장 (JSON 형식)
+            with open(self.credentials_file, 'w', encoding='utf-8') as token:
+                token.write(creds.to_json())
         
         self.youtube = build('youtube', 'v3', credentials=creds)
         print("✅ YouTube API 인증 완료")

@@ -79,31 +79,69 @@ print('✅ 인증 완료!')
 ## ☁️ 4단계: GitHub Actions 설정 (24/7 자동화)
 
 ### 4.1 GitHub 저장소 생성
+
+⚠️ **중요: 반드시 Private 저장소로 생성하세요!**
+- API 키와 인증 정보가 포함되어 있으므로 절대 Public으로 하면 안됩니다
+
+1. GitHub에서 새 저장소 생성
+   - Repository name: `youtube-automation`
+   - **Visibility: Private** ✅
+   - "Create repository" 클릭
+
+2. 로컬에서 push
 ```bash
 cd /Users/minsu/Downloads/youtube-automation
+
+# .gitignore에 민감한 파일이 포함되어 있는지 확인
+cat .gitignore
+
 git init
 git add .
 git commit -m "Initial commit"
-
-# GitHub에 새 저장소 생성 후
+git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/youtube-automation.git
 git push -u origin main
 ```
 
 ### 4.2 GitHub Secrets 설정
-GitHub 저장소 → Settings → Secrets and variables → Actions
 
-다음 시크릿 추가:
+GitHub 저장소 → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-| Secret Name | 값 |
-|------------|-----|
-| `GEMINI_API_KEY` | Gemini API 키 |
-| `YOUTUBE_CLIENT_SECRETS` | `client_secrets.json` 파일 전체 내용 |
-| `YOUTUBE_CREDENTIALS` | `youtube_credentials.json` 파일 전체 내용 |
+다음 시크릿을 하나씩 추가:
 
-### 4.3 워크플로우 활성화
-1. GitHub 저장소 → Actions 탭
-2. "I understand my workflows, go ahead and enable them" 클릭
+#### Secret 1: GEMINI_API_KEY
+```
+Name: GEMINI_API_KEY
+Secret: ***REMOVED***
+```
+
+#### Secret 2: YOUTUBE_CLIENT_SECRETS
+```bash
+# 파일 내용 복사
+cat config/client_secrets.json
+```
+복사한 JSON 전체를 Secret 값으로 붙여넣기
+
+#### Secret 3: YOUTUBE_CREDENTIALS
+```bash
+# 파일 내용 복사
+cat config/youtube_credentials.json
+```
+복사한 JSON 전체를 Secret 값으로 붙여넣기
+
+#### Secret 4: PEXELS_API_KEY
+```
+Name: PEXELS_API_KEY
+Secret: ***REMOVED***
+```
+
+### 4.3 워크플로우 확인
+
+push 후 GitHub 저장소에서:
+1. **Actions** 탭 클릭
+2. 워크플로우가 보이면 정상
+3. "I understand my workflows, go ahead and enable them" 버튼이 보이면 클릭
+   - (이 버튼은 첫 push 후에만 나타나며, 안 보이면 이미 활성화된 것)
 
 ---
 

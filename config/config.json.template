@@ -1,0 +1,35 @@
+{
+  "gemini": {
+    "api_key": "YOUR_GEMINI_API_KEY_HERE",
+    "model": "gemini-2.0-flash-exp"
+  },
+  "tts": {
+    "language": "ko-KR",
+    "voice": "ko-KR-SunHiNeural",
+    "speed": 1.3
+  },
+  "video": {
+    "resolution": "1080x1920",
+    "fps": 30,
+    "background_color": [15, 15, 35],
+    "text_color": [255, 255, 255],
+    "accent_color": [255, 215, 0]
+  },
+  "pexels": {
+    "api_key": "YOUR_PEXELS_API_KEY_HERE"
+  },
+  "youtube": {
+    "client_secrets_file": "config/client_secrets.json",
+    "credentials_file": "config/youtube_credentials.json"
+  },
+  "upload": {
+    "category_id": "22",
+    "privacy_status": "public",
+    "default_tags": ["쇼츠", "shorts", "교양", "지식", "팩트"]
+  },
+  "scheduler": {
+    "upload_enabled": false,
+    "weekday_times": ["07:00", "12:00", "18:00", "22:00"],
+    "weekend_times": ["09:00", "12:00", "15:00", "18:00", "22:00"]
+  }
+}
