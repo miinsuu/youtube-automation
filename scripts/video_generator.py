@@ -8,7 +8,10 @@ import json
 import os
 import requests
 import subprocess
+import sys
 import time
+import io
+from contextlib import redirect_stdout, redirect_stderr
 from moviepy import (
     ColorClip, AudioFileClip, CompositeVideoClip, 
     TextClip, concatenate_videoclips, ImageClip, VideoClip
@@ -928,16 +931,38 @@ class VideoGenerator:
                 size=(self.width, self.height)
             ).with_duration(duration).with_audio(audio)
             
-            # 비디오 저장
-            final_video.write_videofile(
-                output_path,
-                fps=self.fps,
-                codec='libx264',
-                audio_codec='aac',
-                temp_audiofile='temp-audio.m4a',
-                remove_temp=True,
-                preset='medium'
-            )
+            # 비디오 저장 (MoviePy 출력을 캡처하여 한 줄로 표시)
+            captured_output = io.StringIO()
+            
+            with redirect_stdout(captured_output):
+                final_video.write_videofile(
+                    output_path,
+                    fps=self.fps,
+                    codec='libx264',
+                    audio_codec='aac',
+                    temp_audiofile='temp-audio.m4a',
+                    remove_temp=True,
+                    preset='medium'
+                )
+            
+            # 캡처된 출력에서 progress bar 라인들만 추출
+            output_lines = captured_output.getvalue().split('\n')
+            last_progress_line = ""
+            
+            for line in output_lines:
+                # frame_index나 chunk를 포함한 진행 라인 찾기
+                if 'frame_index' in line or 'chunk' in line or '|' in line:
+                    # 한 줄에 덮어씌우기
+                    sys.stdout.write(f'\r{line}')
+                    sys.stdout.flush()
+                    last_progress_line = line
+                elif line.strip() and 'MoviePy' in line:
+                    # 완료 메시지는 새 줄로 출력
+                    print(f"\n{line}")
+            
+            # 마지막에 새 줄 추가
+            if last_progress_line:
+                print()
             
             print(f"✅ 비디오 생성 완료: {output_path}")
             return output_path

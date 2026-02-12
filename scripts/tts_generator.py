@@ -9,6 +9,7 @@ import edge_tts
 from pydub import AudioSegment
 import os
 import re
+import time
 
 
 class TTSGenerator:
@@ -26,63 +27,115 @@ class TTSGenerator:
         # 속도 조절 문자열
         rate = f"+{int((self.speed - 1) * 100)}%" if self.speed >= 1 else f"{int((self.speed - 1) * 100)}%"
         
-        communicate = edge_tts.Communicate(text, self.voice, rate=rate)
+        max_retries = 5
+        retry_delay = 2  # 초
         
-        # 타이밍 정보 수집 (SentenceBoundary 사용)
-        sentence_timings = []
-        
-        with open(output_path, "wb") as f:
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    f.write(chunk["data"])
-                elif chunk["type"] == "SentenceBoundary":
-                    # SentenceBoundary: offset=시작시간, duration=지속시간 (100ns 단위)
-                    start = chunk["offset"] / 10000000  # 100ns → 초
-                    duration = chunk["duration"] / 10000000
-                    sentence_timings.append({
-                        "text": chunk["text"],
-                        "start": start,
-                        "end": start + duration,
-                        "duration": duration
-                    })
-        
-        return sentence_timings
+        for attempt in range(max_retries):
+            try:
+                communicate = edge_tts.Communicate(text, self.voice, rate=rate)
+                
+                # 타이밍 정보 수집 (SentenceBoundary 사용)
+                sentence_timings = []
+                
+                with open(output_path, "wb") as f:
+                    async for chunk in communicate.stream():
+                        if chunk["type"] == "audio":
+                            f.write(chunk["data"])
+                        elif chunk["type"] == "SentenceBoundary":
+                            # SentenceBoundary: offset=시작시간, duration=지속시간 (100ns 단위)
+                            start = chunk["offset"] / 10000000  # 100ns → 초
+                            duration = chunk["duration"] / 10000000
+                            sentence_timings.append({
+                                "text": chunk["text"],
+                                "start": start,
+                                "end": start + duration,
+                                "duration": duration
+                            })
+                
+                return sentence_timings
+                
+            except Exception as e:
+                if "503" in str(e) or "Invalid response status" in str(e):
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)  # 지수 백오프
+                        print(f"⚠️  TTS 서버 오류 (503), {wait_time}초 후 재시도 ({attempt + 1}/{max_retries})...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"❌ TTS 서버 오류가 계속됨 ({max_retries}회 재시도 후 실패)")
+                        raise
+                else:
+                    raise
     
     async def _generate_speech(self, text, output_path):
         """Edge TTS로 음성 생성 (비동기)"""
         # 속도 조절 문자열
         rate = f"+{int((self.speed - 1) * 100)}%" if self.speed >= 1 else f"{int((self.speed - 1) * 100)}%"
         
-        communicate = edge_tts.Communicate(text, self.voice, rate=rate)
-        await communicate.save(output_path)
+        max_retries = 5
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                communicate = edge_tts.Communicate(text, self.voice, rate=rate)
+                await communicate.save(output_path)
+                return
+                
+            except Exception as e:
+                if "503" in str(e) or "Invalid response status" in str(e):
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"⚠️  TTS 서버 오류 (503), {wait_time}초 후 재시도 ({attempt + 1}/{max_retries})...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"❌ TTS 서버 오류가 계속됨 ({max_retries}회 재시도 후 실패)")
+                        raise
+                else:
+                    raise
     
     def text_to_speech(self, text, output_path):
         """텍스트를 음성으로 변환합니다."""
-        try:
-            print(f"🎤 TTS 생성 중: {len(text)}자 (음성: {self.voice})")
-            
-            # Edge TTS로 음성 생성 + 타이밍 정보 (SentenceBoundary)
-            sentence_timings = asyncio.run(self._generate_speech_with_timing(text, output_path))
-            
-            # 음성 길이 확인
-            audio = AudioSegment.from_mp3(output_path)
-            duration = len(audio) / 1000.0  # 초 단위
-            
-            print(f"✅ TTS 생성 완료: {output_path}")
-            print(f"   음성 길이: {duration:.1f}초")
-            print(f"   문장 타이밍: {len(sentence_timings)}개")
-            
-            return {
-                'path': output_path,
-                'duration': duration,
-                'sentence_timings': sentence_timings
-            }
-            
-        except Exception as e:
-            print(f"❌ TTS 생성 오류: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                print(f"🎤 TTS 생성 중: {len(text)}자 (음성: {self.voice})")
+                
+                # Edge TTS로 음성 생성 + 타이밍 정보 (SentenceBoundary)
+                sentence_timings = asyncio.run(self._generate_speech_with_timing(text, output_path))
+                
+                # 음성 길이 확인
+                audio = AudioSegment.from_mp3(output_path)
+                duration = len(audio) / 1000.0  # 초 단위
+                
+                print(f"✅ TTS 생성 완료: {output_path}")
+                print(f"   음성 길이: {duration:.1f}초")
+                print(f"   문장 타이밍: {len(sentence_timings)}개")
+                
+                return {
+                    'path': output_path,
+                    'duration': duration,
+                    'sentence_timings': sentence_timings
+                }
+                
+            except Exception as e:
+                error_msg = str(e)
+                if "503" in error_msg or "Invalid response status" in error_msg:
+                    if attempt < max_retries - 1:
+                        wait_time = 3 * (attempt + 1)
+                        print(f"⚠️  TTS 서버 오류 (503), {wait_time}초 후 재시도 ({attempt + 1}/{max_retries})...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"❌ TTS 생성 실패: Bing 서버 오류 (503) - {max_retries}회 재시도 후에도 실패")
+                        print("💡 팁: Bing 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해주세요.")
+                        return None
+                else:
+                    print(f"❌ TTS 생성 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return None
     
     def generate_from_script(self, script_data, output_dir="output/audio"):
         """스크립트 데이터에서 음성을 생성합니다."""
