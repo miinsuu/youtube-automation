@@ -61,6 +61,30 @@ class YouTubeUploader:
         print("✅ YouTube API 인증 완료")
         return True
     
+    def get_authenticated_channel(self):
+        """현재 인증된 YouTube 채널 정보 조회 (기본 채널)"""
+        try:
+            if not self.youtube:
+                return None
+            
+            request = self.youtube.channels().list(
+                part='snippet,contentDetails',
+                mine=True
+            )
+            response = request.execute()
+            
+            if response.get('items'):
+                channel = response['items'][0]
+                return {
+                    'id': channel['id'],
+                    'title': channel['snippet']['title'],
+                    'description': channel['snippet'].get('description', '')
+                }
+            return None
+        except Exception as e:
+            print(f"❌ 현재 채널 조회 오류: {e}")
+            return None
+    
     def get_my_channels(self):
         """내 모든 YouTube 채널 목록 조회"""
         try:
@@ -101,6 +125,11 @@ class YouTubeUploader:
             
             if target_channel_id:
                 print(f"🎯 업로드 대상 채널: {target_channel_id}")
+                # 현재 인증된 채널 확인
+                current_channel = self.get_authenticated_channel()
+                if current_channel and current_channel['id'] != target_channel_id:
+                    print(f"⚠️  경고: 현재 로그인 채널({current_channel['id']})과 대상 채널({target_channel_id})이 다릅니다!")
+                    print(f"   로그인한 계정의 기본 채널로 업로드됩니다.")
             else:
                 print("⚠️ 채널 ID가 지정되지 않았습니다. 기본 채널로 업로드됩니다.")
             

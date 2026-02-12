@@ -93,8 +93,18 @@ class YouTubeAutomation:
         
         if upload and self.config['upload']['auto_upload']:
             print("\n[4/4] 📤 YouTube 업로드 중...")
+            
+            # 현재 인증된 채널 확인
+            current_channel = self.uploader.get_authenticated_channel()
+            if current_channel:
+                print(f"✓ 현재 로그인 채널: {current_channel['title']} ({current_channel['id']})")
+            
             # 설정에서 지정된 채널 ID 가져오기
             target_channel_id = self.config['youtube'].get('target_channel_id')
+            if target_channel_id and current_channel and current_channel['id'] != target_channel_id:
+                print(f"⚠️  주의: 대상 채널({target_channel_id})이 현재 로그인 채널과 다릅니다!")
+                print(f"   → 현재 로그인 채널({current_channel['id']})로 업로드됩니다.")
+            
             upload_result = self.uploader.upload_video(
                 video_path, 
                 script_data,
