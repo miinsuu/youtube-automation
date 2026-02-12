@@ -55,220 +55,312 @@ class VideoGenerator:
         return None
     
     def extract_keywords_from_script(self, script_text):
-        """대본에서 키워드 추출"""
+        """대본에서 키워드 추출 - 다양성 증가"""
         import re
+        import random
         
-        # 한글-영어 키워드 매핑 (확장)
+        # 한글-영어 키워드 매핑 (각 키워드별로 여러 검색 쿼리 옵션)
         keyword_map = {
+            # 금융/재테크 (다양한 쿼리)
+            "돈": ["money finance", "cash wealth", "coins gold", "financial success"],
+            "주식": ["stock market", "trading chart", "investment growth", "financial data"],
+            "암호": ["cryptocurrency", "bitcoin blockchain", "digital currency"],
+            "투자": ["investment portfolio", "business growth", "wealth building"],
+            "부동산": ["real estate", "house property", "building architecture"],
+            "이직": ["career change", "job interview", "business opportunity"],
+            "절약": ["saving money", "budgeting finance", "piggy bank"],
+            "금융": ["banking finance", "economy growth", "financial planning"],
+            
+            # 심리/성공
+            "심리": ["psychology mind", "brain thinking", "mental health"],
+            "성공": ["success winner", "achievement trophy", "business growth"],
+            "자존감": ["confidence self", "empowerment motivation", "personal growth"],
+            "관계": ["relationship people", "friendship together", "communication"],
+            "스트레스": ["stress relief", "meditation peace", "relaxation calm"],
+            "집중": ["focus concentration", "meditation brain", "mindfulness"],
+            "수면": ["sleep rest", "bedroom night", "peaceful calm"],
+            "습관": ["habit routine", "lifestyle healthy", "self improvement"],
+            
+            # 뷰티/건강
+            "얼굴": ["face beauty", "skin care", "skincare routine"],
+            "피부": ["skin dermatology", "beauty cosmetics", "skincare"],
+            "헬스": ["gym fitness", "exercise workout", "weight training"],
+            "건강": ["health wellness", "nutrition healthy", "fitness lifestyle"],
+            "살": ["weight loss", "diet healthy", "body fitness"],
+            "연예인": ["celebrity fame", "entertainment fashion", "glamour"],
+            
+            # 커리어/학습
+            "유튜브": ["youtube content", "video production", "streaming media"],
+            "알고리즘": ["data algorithm", "artificial intelligence", "technology"],
+            "직업": ["career profession", "job workplace", "business"],
+            "면접": ["job interview", "business meeting", "interview"],
+            "커리어": ["career growth", "professional development", "business"],
+            "입시": ["graduation school", "education campus", "university"],
+            "공무원": ["government office", "civil service", "administration"],
+            "영어": ["english language", "learning education", "language study"],
+            
             # 과학/기술
-            "뇌": "brain neuroscience",
-            "우주": "space galaxy stars",
-            "행성": "planet solar system",
-            "블랙홀": "black hole space",
-            "태양": "sun solar",
-            "달": "moon lunar",
-            "별": "stars night sky",
-            "과학": "science laboratory",
-            "실험": "experiment laboratory",
-            "DNA": "DNA genetics",
-            "세포": "cell biology",
-            "원자": "atom physics",
-            "에너지": "energy power",
-            "전기": "electricity lightning",
-            "로봇": "robot technology",
-            "인공지능": "artificial intelligence AI",
-            "컴퓨터": "computer technology",
+            "뇌": ["brain neuroscience", "thinking intelligence", "mind science"],
+            "우주": ["space galaxy", "universe stars", "astronomy cosmos"],
+            "행성": ["planet solar", "space universe", "astronomy"],
+            "블랙홀": ["black hole space", "universe physics", "astronomy"],
+            "태양": ["sun solar", "star bright", "astronomy"],
+            "달": ["moon lunar", "night sky", "space"],
+            "별": ["stars night", "constellation sky", "astronomy"],
+            "과학": ["science laboratory", "research experiment", "technology"],
+            "실험": ["experiment laboratory", "science research", "chemical"],
+            "DNA": ["DNA genetics", "biology science", "microscope"],
+            "세포": ["cell biology", "microscope science", "medical"],
+            "원자": ["atom physics", "molecule science", "quantum"],
+            "에너지": ["energy power", "electricity", "solar power"],
+            "전기": ["electricity lightning", "power energy", "electrical"],
+            "로봇": ["robot technology", "artificial intelligence", "automation"],
+            "인공지능": ["artificial intelligence AI", "technology future", "robot"],
+            "컴퓨터": ["computer technology", "digital gadget", "electronics"],
             
             # 자연/동물
-            "바다": "ocean underwater sea",
-            "산": "mountain nature",
-            "숲": "forest trees nature",
-            "동물": "animals wildlife",
-            "새": "birds flying",
-            "물고기": "fish underwater",
-            "고래": "whale ocean",
-            "상어": "shark ocean",
-            "사자": "lion wildlife",
-            "호랑이": "tiger wildlife",
-            "공룡": "dinosaur prehistoric",
-            "곤충": "insects macro",
-            "꽃": "flowers nature",
-            "나무": "trees forest",
+            "바다": ["ocean underwater", "sea beach", "marine life"],
+            "산": ["mountain nature", "landscape hiking", "wilderness"],
+            "숲": ["forest trees", "nature woodland", "green landscape"],
+            "동물": ["animals wildlife", "nature fauna", "wildlife photography"],
+            "새": ["birds flying", "wildlife nature", "bird photography"],
+            "물고기": ["fish underwater", "aquatic marine", "ocean life"],
+            "고래": ["whale ocean", "marine mammal", "underwater"],
+            "상어": ["shark ocean", "marine predator", "underwater"],
+            "사자": ["lion wildlife", "safari animals", "wildlife africa"],
+            "호랑이": ["tiger wildlife", "nature stripes", "big cats"],
+            "공룡": ["dinosaur prehistoric", "extinct animals", "fossil"],
+            "곤충": ["insects macro", "nature detail", "close up"],
+            "꽃": ["flowers nature", "garden bloom", "colorful plants"],
+            "나무": ["trees forest", "nature leaves", "woodland"],
             
             # 인체/건강
-            "심장": "heart medical",
-            "눈": "eye vision",
-            "귀": "ear hearing",
-            "피": "blood medical",
-            "근육": "muscle fitness",
-            "뼈": "skeleton bones",
-            "인체": "human body anatomy",
-            "건강": "health wellness",
-            "운동": "exercise fitness",
-            "수면": "sleep rest",
-            "음식": "food nutrition",
+            "심장": ["heart medical", "cardiac health", "anatomy"],
+            "눈": ["eye vision", "sight optical", "eyeball"],
+            "귀": ["ear hearing", "audio sound", "auditory"],
+            "피": ["blood medical", "vein anatomy", "healthcare"],
+            "근육": ["muscle fitness", "body workout", "exercise"],
+            "뼈": ["skeleton bones", "anatomy structure", "medical"],
+            "인체": ["human body", "anatomy medical", "health"],
             
             # 역사/문화
-            "역사": "history ancient civilization",
-            "전쟁": "war battle history",
-            "왕": "king royal castle",
-            "피라미드": "pyramid egypt ancient",
-            "로마": "rome ancient architecture",
-            "그리스": "greece ancient temple",
-            "중세": "medieval castle knight",
-            "문명": "civilization ancient",
+            "역사": ["history ancient", "civilization culture", "historical"],
+            "전쟁": ["war battle", "history conflict", "military"],
+            "왕": ["king royal", "castle monarchy", "palace"],
+            "피라미드": ["pyramid egypt", "ancient architecture", "monument"],
+            "로마": ["rome ancient", "roman empire", "ancient civilization"],
+            "그리스": ["greece ancient", "greek temple", "antique"],
+            "중세": ["medieval castle", "knight history", "ancient times"],
+            "문명": ["civilization ancient", "culture history", "society"],
             
             # 세계/지리
-            "세계": "world globe earth",
-            "지구": "earth planet",
-            "나라": "countries flags world",
-            "도시": "city skyline urban",
-            "사막": "desert landscape",
-            "북극": "arctic ice polar",
-            "화산": "volcano lava",
-            "지진": "earthquake disaster",
+            "세계": ["world globe", "earth travel", "international"],
+            "지구": ["earth planet", "world geography", "globe"],
+            "나라": ["countries travel", "flags world", "international"],
+            "도시": ["city skyline", "urban landscape", "metropolis"],
+            "사막": ["desert landscape", "sand nature", "arid"],
+            "북극": ["arctic ice", "polar region", "snow"],
+            "화산": ["volcano lava", "eruption nature", "geological"],
+            "지진": ["earthquake disaster", "seismic", "natural disaster"],
             
-            # 심리/감정
-            "심리": "psychology mind brain",
-            "감정": "emotions feelings",
-            "기억": "memory brain",
-            "꿈": "dream sleep",
-            "행복": "happiness joy",
-            "공포": "fear horror dark",
-            "사랑": "love heart romance",
-            
-            # 기록/숫자
-            "기록": "record achievement trophy",
-            "세계기록": "world record champion",
-            "최고": "best champion winner",
-            "최초": "first pioneer discovery",
-            "숫자": "numbers mathematics",
-            "통계": "statistics data chart",
+            # 감정/기타
+            "감정": ["emotions feeling", "expression face", "psychology"],
+            "기억": ["memory brain", "remembering thought", "mind"],
+            "꿈": ["dream sleep", "nighttime rest", "subconscious"],
+            "행복": ["happiness joy", "smile success", "celebration"],
+            "공포": ["fear horror", "dark scary", "thriller"],
+            "사랑": ["love romance", "heart relationship", "passion"],
+            "기록": ["record achievement", "trophy winner", "success"],
+            "숫자": ["numbers data", "statistics chart", "mathematics"],
         }
         
         # 대본에서 매칭되는 키워드 찾기
         found_keywords = []
-        for kr, en in keyword_map.items():
+        for kr, queries in keyword_map.items():
             if kr in script_text:
-                found_keywords.append(en)
+                # 각 키워드마다 여러 쿼리 중 하나를 랜덤으로 선택
+                if isinstance(queries, list):
+                    found_keywords.append(random.choice(queries))
+                else:
+                    found_keywords.append(queries)
         
-        # 키워드가 없으면 기본값
+        # 키워드가 없으면 다양한 기본값 중 선택
         if not found_keywords:
-            found_keywords = ["abstract dark background"]
+            default_queries = [
+                "abstract dark background",
+                "cinematic lighting", 
+                "dramatic background",
+                "modern minimal",
+                "professional wallpaper",
+                "inspirational poster",
+                "creative design",
+                "geometric pattern"
+            ]
+            found_keywords = [random.choice(default_queries)]
         
         return found_keywords
 
     def download_background_images(self, keywords, count=3, script_text=""):
-        """Pexels API로 배경 이미지 다운로드 (대본 기반 키워드 사용)"""
-        images = []
+        """Pexels API로 배경 이미지 다운로드 (다양성 증가)"""
+        import random
         
-        # Pexels API 키
+        images = []
         pexels_api_key = "***REMOVED***"
         
         try:
-            # 대본에서 키워드 추출
+            # 대본에서 키워드 추출 (매번 다른 결과)
             if script_text:
                 search_queries = self.extract_keywords_from_script(script_text)
             else:
-                # 기존 방식 (토픽 기반)
+                # 토픽 기반 폴백 (기존 호환성)
                 keyword_map = {
-                    "역사": "history ancient",
-                    "과학": "science technology",
-                    "우주": "space galaxy",
-                    "동물": "animals nature",
-                    "심리학": "brain mind",
-                    "인체": "human body medical",
-                    "기술": "technology future",
-                    "세계": "world travel"
+                    "돈": ["money finance", "wealth"],
+                    "주식": ["stock market", "trading"],
+                    "심리": ["psychology mind", "brain thinking"],
+                    "건강": ["health wellness", "fitness"],
+                    "역사": ["history ancient", "civilization"],
+                    "우주": ["space galaxy", "astronomy"],
+                    "기술": ["technology future", "innovation"],
                 }
-                
                 search_queries = ["abstract dark background"]
-                for kr, en in keyword_map.items():
+                for kr, qs in keyword_map.items():
                     if kr in keywords:
-                        search_queries = [en]
+                        search_queries = qs if isinstance(qs, list) else [qs]
                         break
             
             headers = {"Authorization": pexels_api_key}
             
-            # 각 키워드별로 이미지 검색 (다양한 이미지 확보)
-            images_per_query = max(1, count // len(search_queries[:3]))
+            # 랜덤 페이지 오프셋으로 다양한 이미지 가져오기
+            page_offset = random.randint(1, 10)
             
-            for query in search_queries[:5]:  # 최대 5개 키워드
+            # 각 키워드별로 이미지 검색
+            for query in search_queries[:8]:  # 최대 8개 키워드
                 if len(images) >= count:
                     break
+                
+                try:
+                    # 랜덤 페이지 사용으로 매번 다른 이미지 가져오기
+                    page = page_offset + random.randint(0, 5)
+                    per_page = max(5, count - len(images) + 2)
                     
-                url = f"https://api.pexels.com/v1/search?query={query}&per_page={images_per_query}&orientation=portrait"
-                
-                response = requests.get(url, headers=headers, timeout=10)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for photo in data.get('photos', []):
-                        if len(images) >= count:
-                            break
-                        img_url = photo['src']['large2x']
-                        img_response = requests.get(img_url, timeout=10)
-                        if img_response.status_code == 200:
-                            from io import BytesIO
-                            img = Image.open(BytesIO(img_response.content))
-                            img = self._resize_and_crop(img)
-                            images.append(img)
-                            print(f"✅ 배경 이미지 다운로드 ({query}): {len(images)}/{count}")
+                    url = f"https://api.pexels.com/v1/search?query={query}&per_page={per_page}&page={page}&orientation=portrait"
+                    response = requests.get(url, headers=headers, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        photos = data.get('photos', [])
+                        
+                        # 여러 사진 중에서 랜덤 선택으로 다양성 증가
+                        if len(photos) > 0:
+                            random.shuffle(photos)
+                            for photo in photos:
+                                if len(images) >= count:
+                                    break
+                                try:
+                                    img_url = photo['src']['large2x']
+                                    img_response = requests.get(img_url, timeout=10)
+                                    if img_response.status_code == 200:
+                                        from io import BytesIO
+                                        img = Image.open(BytesIO(img_response.content))
+                                        img = self._resize_and_crop(img)
+                                        images.append(img)
+                                        print(f"✅ 배경 이미지 다운로드 ({query}): {len(images)}/{count}")
+                                except:
+                                    continue
+                except Exception as e:
+                    print(f"⚠️  쿼리 실패 ({query}): {e}")
+                    continue
             
         except Exception as e:
             print(f"⚠️ 배경 이미지 다운로드 실패: {e}")
         
-        # 이미지가 부족하면 무난한 이미지로 채우기 (그라디언트 대신)
-        fallback_queries = ["dark abstract", "night sky", "nature landscape", "cinematic background", "dramatic lighting"]
-        fallback_idx = 0
-        
-        while len(images) < count and fallback_idx < len(fallback_queries):
-            try:
-                query = fallback_queries[fallback_idx]
-                print(f"📷 추가 배경 검색 ({query})...")
+        # 이미지 부족 시 - 다양한 폴백 쿼리로 추가 검색
+        if len(images) < count:
+            fallback_queries = [
+                "dark abstract modern",
+                "night sky stars",
+                "nature landscape scenic",
+                "cinematic dramatic lighting",
+                "urban city modern",
+                "technology digital future",
+                "professional business",
+                "creative artistic",
+                "minimalist design",
+                "colorful vibrant",
+                "moody atmospheric",
+                "energy power",
+                "success achievement",
+                "growth development",
+                "motion dynamic",
+                "bright sunny"
+            ]
+            
+            # 랜덤으로 섞어서 순회
+            random.shuffle(fallback_queries)
+            
+            for query in fallback_queries:
+                if len(images) >= count:
+                    break
                 
-                url = f"https://api.pexels.com/v1/search?query={query}&per_page=3&orientation=portrait"
-                headers = {"Authorization": pexels_api_key}
-                response = requests.get(url, headers=headers, timeout=10)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for photo in data.get('photos', []):
-                        if len(images) >= count:
-                            break
-                        img_url = photo['src']['large2x']
-                        img_response = requests.get(img_url, timeout=10)
-                        if img_response.status_code == 200:
-                            from io import BytesIO
-                            img = Image.open(BytesIO(img_response.content))
-                            img = self._resize_and_crop(img)
-                            images.append(img)
-                            print(f"✅ 추가 배경 이미지: {len(images)}/{count}")
-            except:
-                pass
-            fallback_idx += 1
+                try:
+                    # 매번 다른 페이지에서 가져오기
+                    page = random.randint(1, 15)
+                    print(f"📷 추가 배경 검색 ({query}) - page {page}...")
+                    
+                    url = f"https://api.pexels.com/v1/search?query={query}&per_page=5&page={page}&orientation=portrait"
+                    response = requests.get(url, headers=headers, timeout=10)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        photos = data.get('photos', [])
+                        
+                        if len(photos) > 0:
+                            random.shuffle(photos)
+                            for photo in photos:
+                                if len(images) >= count:
+                                    break
+                                try:
+                                    img_url = photo['src']['large2x']
+                                    img_response = requests.get(img_url, timeout=10)
+                                    if img_response.status_code == 200:
+                                        from io import BytesIO
+                                        img = Image.open(BytesIO(img_response.content))
+                                        img = self._resize_and_crop(img)
+                                        images.append(img)
+                                        print(f"✅ 추가 배경: {len(images)}/{count}")
+                                except:
+                                    continue
+                except:
+                    continue
         
-        # 그래도 부족하면 마지막으로 아무 인기 이미지라도 가져오기
+        # 그래도 부족하면 인기 이미지에서 추가 (다양한 페이지)
         if len(images) < count:
             try:
                 print("📷 인기 이미지에서 추가 검색...")
-                url = f"https://api.pexels.com/v1/curated?per_page={count - len(images)}"
-                headers = {"Authorization": pexels_api_key}
+                page = random.randint(1, 50)
+                url = f"https://api.pexels.com/v1/curated?per_page={count - len(images) + 3}&page={page}&orientation=portrait"
                 response = requests.get(url, headers=headers, timeout=10)
                 
                 if response.status_code == 200:
                     data = response.json()
-                    for photo in data.get('photos', []):
-                        if len(images) >= count:
-                            break
-                        img_url = photo['src']['large2x']
-                        img_response = requests.get(img_url, timeout=10)
-                        if img_response.status_code == 200:
-                            from io import BytesIO
-                            img = Image.open(BytesIO(img_response.content))
-                            img = self._resize_and_crop(img)
-                            images.append(img)
-                            print(f"✅ 인기 이미지 추가: {len(images)}/{count}")
+                    photos = data.get('photos', [])
+                    
+                    if len(photos) > 0:
+                        random.shuffle(photos)
+                        for photo in photos:
+                            if len(images) >= count:
+                                break
+                            try:
+                                img_url = photo['src']['large2x']
+                                img_response = requests.get(img_url, timeout=10)
+                                if img_response.status_code == 200:
+                                    from io import BytesIO
+                                    img = Image.open(BytesIO(img_response.content))
+                                    img = self._resize_and_crop(img)
+                                    images.append(img)
+                                    print(f"✅ 인기 이미지 추가: {len(images)}/{count}")
+                            except:
+                                continue
             except:
                 pass
         
