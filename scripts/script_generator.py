@@ -7,6 +7,7 @@ import json
 import random
 import requests
 import re
+import time
 from datetime import datetime
 
 
@@ -18,7 +19,7 @@ class ScriptGenerator:
         self.api_key = self.config['gemini_api_key']
         self.topics = self.config['content']['topics']
     
-    def get_trending_topic(self):
+    def get_trending_topic(self, max_retries=3):
         """Gemini API에서 요즘 조회수/구독이 잘 되는 트렌디한 주제를 추천받습니다."""
         try:
             prompt = """현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 5개를 추천해주세요.
@@ -28,68 +29,76 @@ class ScriptGenerator:
 - 2024-2025년 최신 트렌드 반영
 - 각 주제는 한 줄씩만 (30자 이내)
 - 금융, 심리, 건강, 연예, 기술, 사회 등 다양한 카테고리에서 선택
-- 큰따옴표 사용 금지 (큰따옴표 대신 작은따옴표만 사용)
 
-다음 형식으로만 답변하세요 (JSON 형식, 다른 텍스트 추가 금지):
+다음 JSON 형식으로만 답변하세요:
 {{"topics":["주제1","주제2","주제3","주제4","주제5"]}}"""
             
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
             
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": prompt
-                    }]
-                }],
-                "generationConfig": {
-                    "temperature": 0.8,
-                    "maxOutputTokens": 512,
-                }
-            }
+            for attempt in range(max_retries):
+                try:
+                    payload = {
+                        "contents": [{
+                            "parts": [{
+                                "text": prompt
+                            }]
+                        }],
+                        "generationConfig": {
+                            "temperature": 0.7,
+                            "maxOutputTokens": 200,
+                        }
+                    }
+                    
+                    response = requests.post(url, json=payload, timeout=10)
+                    
+                    # 429 Too Many Requests 처리
+                    if response.status_code == 429:
+                        wait_time = min(2 ** attempt + random.uniform(0, 1), 30)  # 지수 백오프
+                        print(f"⏳ API 요청 제한. {wait_time:.1f}초 대기 후 재시도 ({attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                        continue
+                    
+                    response.raise_for_status()
+                    
+                    data = response.json()
+                    
+                    # 응답 파싱
+                    if not data.get('candidates'):
+                        print(f"⚠️ 빈 응답, 재시도 {attempt + 1}/{max_retries}")
+                        continue
+                    
+                    content = data['candidates'][0]['content']['parts'][0]['text']
+                    
+                    # JSON 추출
+                    content = content.strip()
+                    json_match = re.search(r'\{[^{}]*"topics"[^{}]*\}', content)
+                    if not json_match:
+                        json_match = re.search(r'\{[\s\S]*?\}', content)
+                    
+                    if json_match:
+                        json_str = json_match.group()
+                        result = json.loads(json_str)
+                        trending_topics = result.get('topics', [])
+                        trending_topics = [t.strip() for t in trending_topics if t and isinstance(t, str) and len(t.strip()) > 0]
+                        
+                        if trending_topics:
+                            print(f"🔥 트렌디한 주제 {len(trending_topics)}개 추천받음!")
+                            return trending_topics
+                    else:
+                        print(f"⚠️ JSON 찾지 못함, 재시도 {attempt + 1}/{max_retries}")
+                        continue
+                    
+                except json.JSONDecodeError as e:
+                    print(f"⚠️ JSON 파싱 실패, 재시도 {attempt + 1}/{max_retries}: {str(e)[:50]}")
+                except requests.exceptions.Timeout:
+                    print(f"⏱️ 요청 타임아웃, 재시도 {attempt + 1}/{max_retries}")
+                    time.sleep(1)
+                except requests.exceptions.RequestException as e:
+                    print(f"⚠️ API 요청 오류, 재시도 {attempt + 1}/{max_retries}: {str(e)[:50]}")
+                    time.sleep(1)
             
-            response = requests.post(url, json=payload, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            content = data['candidates'][0]['content']['parts'][0]['text']
-            
-            # JSON 파싱 - 마크다운 코드블록 제거
-            import re
-            content = content.strip()
-            if content.startswith('```json'):
-                content = content[7:]
-            if content.startswith('```'):
-                content = content[3:]
-            if content.endswith('```'):
-                content = content[:-3]
-            content = content.strip()
-            
-            # 가장 마지막 JSON 객체 추출 (여러 개일 경우 마지막 것 사용)
-            json_match = re.search(r'\{[^{}]*"topics"[^{}]*\}', content)
-            if json_match:
-                content = json_match.group()
-            else:
-                # 실패 시 중괄호로 감싼 모든 텍스트 추출
-                json_match = re.search(r'\{[\s\S]*\}', content)
-                if json_match:
-                    content = json_match.group()
-            
-            result = json.loads(content)
-            trending_topics = result.get('topics', [])
-            
-            # 유효한 주제만 필터링
-            trending_topics = [t.strip() for t in trending_topics if t and isinstance(t, str) and len(t.strip()) > 0]
-            
-            if trending_topics:
-                print(f"🔥 트렌디한 주제 {len(trending_topics)}개를 추천받았습니다!")
-                for i, t in enumerate(trending_topics, 1):
-                    print(f"   {i}. {t}")
-                return trending_topics
-            
-        except json.JSONDecodeError as e:
-            print(f"⚠️ 트렌디한 주제 JSON 파싱 실패: {e}")
         except Exception as e:
-            print(f"⚠️ 트렌디한 주제 추천 실패: {e}")
+            print(f"⚠️ 트렌디한 주제 생성 실패: {str(e)[:100]}")
         
         return None
     
@@ -140,10 +149,10 @@ JSON 출력:
 
 JSON만 출력."""
         
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
+        
         for attempt in range(max_retries):
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
-                
                 payload = {
                     "contents": [{
                         "parts": [{
@@ -152,17 +161,32 @@ JSON만 출력."""
                     }],
                     "generationConfig": {
                         "temperature": 0.7,
-                        "maxOutputTokens": 4096,
+                        "maxOutputTokens": 2048,
                     }
                 }
                 
-                response = requests.post(url, json=payload)
+                response = requests.post(url, json=payload, timeout=15)
+                
+                # 429 Too Many Requests 처리
+                if response.status_code == 429:
+                    wait_time = min(2 ** attempt + random.uniform(0, 1), 60)  # 지수 백오프
+                    print(f"⏳ API 요청 제한. {wait_time:.1f}초 대기 후 재시도 ({attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                    continue
+                
                 response.raise_for_status()
                 
                 data = response.json()
                 
+                # 응답이 비어있는지 확인
+                if not data.get('candidates'):
+                    print(f"⚠️ 빈 응답, 재시도 {attempt + 1}/{max_retries}")
+                    time.sleep(1)
+                    continue
+                
                 # 응답이 완료되었는지 확인
-                if data.get('candidates', [{}])[0].get('finishReason') == 'MAX_TOKENS':
+                finish_reason = data['candidates'][0].get('finishReason', 'UNKNOWN')
+                if finish_reason == 'MAX_TOKENS':
                     print(f"⚠️ 응답이 잘림, 재시도 {attempt + 1}/{max_retries}")
                     continue
                 
@@ -179,23 +203,32 @@ JSON만 출력."""
                 content = content.strip()
                 
                 # JSON 추출 시도 (중괄호 사이의 내용만 추출)
-                import re
-                json_match = re.search(r'\{[\s\S]*\}', content)
+                json_match = re.search(r'\{[\s\S]*?\}', content)
                 if json_match:
-                    content = json_match.group()
-                
-                result = json.loads(content)
-                result['topic'] = topic
-                result['generated_at'] = datetime.now().isoformat()
-                
-                return result
+                    json_str = json_match.group()
+                    result = json.loads(json_str)
+                    result['topic'] = topic
+                    result['generated_at'] = datetime.now().isoformat()
+                    return result
+                else:
+                    print(f"⚠️ JSON 형식 찾지 못함, 재시도 {attempt + 1}/{max_retries}")
+                    continue
                 
             except json.JSONDecodeError as e:
-                print(f"⚠️ JSON 파싱 오류, 재시도 {attempt + 1}/{max_retries}: {e}")
+                print(f"⚠️ JSON 파싱 오류, 재시도 {attempt + 1}/{max_retries}: {str(e)[:50]}")
                 if attempt == max_retries - 1:
-                    print(f"원본 응답: {content[:300]}...")
+                    print(f"   응답 미리보기: {content[:100]}...")
+            except requests.exceptions.Timeout:
+                print(f"⏱️ 요청 타임아웃, 재시도 {attempt + 1}/{max_retries}")
+                time.sleep(2)
+            except requests.exceptions.RequestException as e:
+                error_msg = str(e)[:100]
+                print(f"⚠️ API 요청 오류, 재시도 {attempt + 1}/{max_retries}: {error_msg}")
+                time.sleep(1)
             except Exception as e:
-                print(f"⚠️ 오류, 재시도 {attempt + 1}/{max_retries}: {e}")
+                error_msg = str(e)[:100]
+                print(f"⚠️ 예기치 않은 오류, 재시도 {attempt + 1}/{max_retries}: {error_msg}")
+                time.sleep(1)
         
         print("❌ 최대 재시도 횟수 초과")
         return None
