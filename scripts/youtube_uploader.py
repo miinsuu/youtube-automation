@@ -13,7 +13,12 @@ from googleapiclient.http import MediaFileUpload
 
 
 class YouTubeUploader:
-    SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+    # 필요한 모든 YouTube API 스코프
+    SCOPES = [
+        'https://www.googleapis.com/auth/youtube.upload',           # 비디오 업로드
+        'https://www.googleapis.com/auth/youtube.readonly',         # 채널 정보 조회
+        'https://www.googleapis.com/auth/youtube',                  # 전체 YouTube 관리
+    ]
     
     def __init__(self, config_path="config/config.json", channel_id=None):
         with open(config_path, 'r', encoding='utf-8') as f:
