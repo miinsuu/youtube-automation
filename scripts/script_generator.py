@@ -1,19 +1,19 @@
 """
 스크립트 생성 모듈
-Groq API (LLaMA 3.1)를 사용하여 흥미로운 팩트 영상 대본을 자동 생성합니다.
-완전 무료 + 무제한 사용 가능
+Google Gemini API 2.5 Flash를 사용하여 흥미로운 팩트 영상 대본을 자동 생성합니다.
 """
 
 import json
 import random
+import requests
 import re
 import os
 from datetime import datetime
 
 try:
-    from groq import Groq
+    import google.generativeai as genai
 except ImportError:
-    print("⚠️ groq 패키지를 설치해주세요: pip install groq")
+    print("⚠️ google-generativeai 패키지를 설치해주세요: pip install google-generativeai")
     raise
 
 
@@ -22,21 +22,21 @@ class ScriptGenerator:
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
         
-        # Groq API 설정
-        self.groq_api_key = self.config.get('groq_api_key') or os.environ.get('GROQ_API_KEY')
-        if not self.groq_api_key or 'YOUR_GROQ_API_KEY' in self.groq_api_key:
-            raise ValueError("❌ Groq API 키가 필요합니다.\n"
-                           "1. https://console.groq.com 에서 무료 회원가입\n"
-                           "2. API 키 발급 받기\n"
-                           "3. config.json에서 groq_api_key 입력하거나\n"
-                           "4. GROQ_API_KEY 환경변수 설정")
+        # Gemini API 설정
+        self.api_key = self.config.get('gemini_api_key') or os.environ.get('GOOGLE_API_KEY')
+        if not self.api_key or 'YOUR_GEMINI_API_KEY' in self.api_key:
+            raise ValueError("❌ Gemini API 키가 필요합니다.\n"
+                           "1. https://aistudio.google.com/apikey 에서 API 키 발급\n"
+                           "2. config.json에서 gemini_api_key 입력하거나\n"
+                           "3. GOOGLE_API_KEY 환경변수 설정")
         
-        self.client = Groq(api_key=self.groq_api_key)
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
         self.topics = self.config['content']['topics']
-        print(f"✅ Groq API 초기화 완료 (LLaMA 3.1 - 완전 무료!)")
+        print(f"✅ Gemini 2.5 Flash API 초기화 완료")
     
     def get_trending_topic(self):
-        """Groq LLaMA 3.1로 요즘 조회수/구독이 잘 되는 트렌디한 주제를 추천받습니다."""
+        """Gemini API에서 요즘 조회수/구독이 잘 되는 트렌디한 주제를 추천받습니다."""
         try:
             prompt = """현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 3개를 추천해주세요.
 
@@ -47,16 +47,8 @@ class ScriptGenerator:
 다음 JSON 형식으로만 답변하세요:
 {"topics":["주제1","주제2","주제3"]}"""
             
-            message = self.client.chat.completions.create(
-                model="llama-3.1-70b-versatile",
-                max_tokens=150,
-                temperature=0.5,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            content = message.choices[0].message.content.strip()
+            response = self.model.generate_content(prompt)
+            content = response.text.strip()
             
             # JSON 추출
             json_match = re.search(r'\{[^{}]*"topics"[^{}]*\}', content)
@@ -127,16 +119,8 @@ JSON 출력:
 JSON만 출력."""
         
         try:
-            message = self.client.chat.completions.create(
-                model="llama-3.1-70b-versatile",
-                max_tokens=2500,
-                temperature=0.7,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-            
-            content = message.choices[0].message.content.strip()
+            response = self.model.generate_content(prompt)
+            content = response.text.strip()
             
             # JSON 파싱 (마크다운 코드블록 제거)
             if content.startswith('```json'):
