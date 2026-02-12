@@ -66,11 +66,19 @@ class YouTubeAutomation:
             print("❌ 음성 생성 실패")
             return None
         
-        # 3. 비디오 생성 (음성 타이밍 정보 전달)
+        # 3. 비디오 생성 (음성 타이밍 정보 전달, AI 배경 이미지 사용)
         print("\n[3/4] 🎬 비디오 생성 중...")
         video_path = f"output/videos/video_{timestamp}.mp4"
         sentence_timings = audio_result.get('sentence_timings', None)
-        final_video = self.video_gen.create_video(script_data, audio_path, video_path, sentence_timings=sentence_timings)
+        # AI 배경 이미지 사용 (config에서 설정 가능)
+        use_ai_bg = self.config.get('video', {}).get('use_ai_background', True)
+        final_video = self.video_gen.create_video(
+            script_data, 
+            audio_path, 
+            video_path, 
+            sentence_timings=sentence_timings,
+            use_ai_background=use_ai_bg
+        )
         if not final_video:
             print("❌ 비디오 생성 실패")
             return None

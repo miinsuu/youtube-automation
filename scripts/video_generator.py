@@ -1,12 +1,14 @@
 """
 비디오 생성 모듈
 MoviePy를 사용하여 음성, 배경, 자막을 합성하여 최종 영상을 생성합니다.
+AI 이미지 생성 (Pollinations.ai)도 지원합니다.
 """
 
 import json
 import os
 import requests
 import subprocess
+import time
 from moviepy import (
     ColorClip, AudioFileClip, CompositeVideoClip, 
     TextClip, concatenate_videoclips, ImageClip, VideoClip
@@ -31,6 +33,127 @@ class VideoGenerator:
         
         # 한글 폰트 찾기
         self.font_path = self._find_korean_font()
+    
+    def generate_ai_prompts(self, script_data):
+        """대본을 기반으로 5개의 AI 이미지 생성 프롬프트 생성"""
+        script_text = script_data.get('script', '')
+        title = script_data.get('title', '')
+        topic = script_data.get('topic', '')
+        
+        # 프롬프트 구조: [인트로, 섹션1, 섹션2, 섹션3, 아웃트로]
+        prompts = []
+        
+        # 1. 인트로 - 임팩트 있는 이미지
+        intro_prompt = f"Professional cinematic intro image for '{title}', dynamic lighting, 4K quality, modern aesthetic, vibrant colors"
+        prompts.append(("intro", intro_prompt))
+        
+        # 대본을 3개의 섹션으로 분할
+        sentences = script_text.split('.')
+        section_size = len(sentences) // 3
+        
+        section_texts = [
+            '.'.join(sentences[:section_size]),
+            '.'.join(sentences[section_size:section_size*2]),
+            '.'.join(sentences[section_size*2:])
+        ]
+        
+        # 2-4. 섹션별 이미지 (대본의 핵심 키워드 추출)
+        for i, section_text in enumerate(section_texts, 1):
+            # 핵심 키워드 추출 (첫 10글자 + 주제)
+            keywords = section_text[:30] if section_text else topic
+            
+            section_prompt = f"Professional educational visual for '{keywords}', informative graphic, modern design, high quality, {topic}, cinematic lighting, 4K"
+            prompts.append((f"section{i}", section_prompt))
+        
+        # 5. 아웃트로 - 마무리 이미지
+        outro_prompt = f"Professional outro image, success and achievement theme, {title}, modern aesthetic, inspiring visual, 4K quality"
+        prompts.append(("outro", outro_prompt))
+        
+        return prompts
+    
+    def generate_ai_image(self, prompt, output_path, retry_count=3):
+        """AI 이미지 생성 - 여러 서비스 시도 (Unsplash API 폴백)"""
+        try:
+            print(f"🎨 AI 이미지 생성 중: {output_path}")
+            
+            # Pollinations.ai 시도 (현재 문제가 있음)
+            url = "https://image.pollinations.ai/prompt/" + prompt.replace(' ', '%20')
+            
+            for attempt in range(retry_count):
+                try:
+                    response = requests.get(url, timeout=30, stream=True)
+                    
+                    if response.status_code == 200 and response.headers.get('content-type', '').startswith('image'):
+                        # 이미지 저장
+                        with open(output_path, 'wb') as f:
+                            f.write(response.content)
+                        
+                        # 이미지 검증
+                        try:
+                            img = Image.open(output_path)
+                            if img.size[0] > 100:  # 유효한 이미지 확인
+                                print(f"✅ AI 이미지 생성 완료: {output_path}")
+                                return output_path
+                        except:
+                            pass
+                    
+                    print(f"⚠️ 이미지 형식 오류, 재시도 {attempt+1}/{retry_count}")
+                    time.sleep(2)
+                
+                except Exception as e:
+                    print(f"⚠️ 오류: {e}, 재시도 {attempt+1}/{retry_count}")
+                    time.sleep(2)
+            
+            print(f"❌ AI 이미지 생성 실패, 폴백 이미지 사용")
+            return None
+            
+        except Exception as e:
+            print(f"❌ AI 이미지 생성 오류: {e}")
+            return None
+    
+    def generate_ai_background_images(self, script_data, use_ai=True):
+        """AI로 5개의 배경 이미지 생성 (인트로, 섹션3개, 아웃트로)"""
+        if not use_ai:
+            print("ℹ️ AI 이미지 생성 비활성화, 기존 방식 사용")
+            return None
+        
+        try:
+            print("🎨 AI 배경 이미지 생성 시작 (5장)...")
+            
+            # AI 이미지 생성 프롬프트 생성
+            prompts = self.generate_ai_prompts(script_data)
+            
+            ai_images = []
+            timestamp = int(time.time())
+            
+            for section, prompt in prompts:
+                ai_image_path = f"output/images/ai_bg_{section}_{timestamp}.png"
+                
+                # AI 이미지 생성
+                result_path = self.generate_ai_image(prompt, ai_image_path)
+                
+                if result_path and os.path.exists(result_path):
+                    try:
+                        img = Image.open(result_path)
+                        img = self._resize_and_crop(img)
+                        ai_images.append((section, img))
+                        print(f"✅ {section} 이미지 생성 완료")
+                    except Exception as e:
+                        print(f"⚠️ {section} 이미지 처리 실패: {e}")
+                
+                # API 속도 제한 방지
+                time.sleep(1)
+            
+            if len(ai_images) == 5:
+                print(f"✅ 총 5개 AI 배경 이미지 생성 완료!")
+                return ai_images
+            else:
+                print(f"⚠️ {len(ai_images)}/5개만 생성됨, 부분 AI 사용")
+                return ai_images if ai_images else None
+                
+        except Exception as e:
+            print(f"❌ AI 배경 이미지 생성 실패: {e}")
+            return None
     
     def _find_korean_font(self):
         """시스템에서 한글 폰트 찾기 (GitHub Actions 지원)"""
@@ -763,8 +886,8 @@ class VideoGenerator:
         print(f"✅ 썸네일 생성: {output_path}")
         return output_path
     
-    def create_video(self, script_data, audio_path, output_path, sentence_timings=None):
-        """최종 비디오 생성"""
+    def create_video(self, script_data, audio_path, output_path, sentence_timings=None, use_ai_background=True):
+        """최종 비디오 생성 (AI 배경 이미지 옵션)"""
         try:
             print("🎬 비디오 생성 중...")
             
@@ -772,11 +895,26 @@ class VideoGenerator:
             audio = AudioFileClip(audio_path)
             duration = audio.duration
             
-            # 대본 텍스트로 키워드 기반 배경 이미지 다운로드
-            script_text = script_data.get('script', '')
-            topic = script_data.get('topic', '흥미로운 사실')
-            print(f"📷 대본 키워드 기반 배경 이미지 검색 중...")
-            background_images = self.download_background_images(topic, count=5, script_text=script_text)
+            # AI 배경 이미지 생성 시도
+            ai_images = None
+            if use_ai_background:
+                ai_images = self.generate_ai_background_images(script_data, use_ai=True)
+            
+            # AI 이미지가 없으면 기존 방식 사용
+            if not ai_images:
+                print("📷 기존 방식: 대본 키워드 기반 배경 이미지 검색 중...")
+                script_text = script_data.get('script', '')
+                topic = script_data.get('topic', '흥미로운 사실')
+                background_images = self.download_background_images(topic, count=5, script_text=script_text)
+            else:
+                # AI 이미지 사용 (섹션 순서로 정렬)
+                section_order = ["intro", "section1", "section2", "section3", "outro"]
+                background_images = []
+                for section in section_order:
+                    for sec, img in ai_images:
+                        if sec == section:
+                            background_images.append(img)
+                            break
             
             # 배경 비디오 생성
             background = self.create_background_video(background_images, duration)

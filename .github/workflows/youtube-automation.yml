@@ -28,6 +28,22 @@ on:
   
   workflow_dispatch:  # 수동 실행 가능
     inputs:
+      count:
+        description: 'Number of videos to generate (1-10)'
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+          - '4'
+          - '5'
+          - '6'
+          - '7'
+          - '8'
+          - '9'
+          - '10'
       upload:
         description: 'Enable YouTube upload'
         required: true
@@ -39,6 +55,7 @@ on:
 
 env:
   UPLOAD_ENABLED: ${{ github.event.inputs.upload || 'false' }}
+  VIDEO_COUNT: ${{ github.event.inputs.count || '1' }}
 
 jobs:
   create-and-upload:
@@ -96,9 +113,9 @@ jobs:
       - name: Create video
         run: |
           if [ "${{ env.UPLOAD_ENABLED }}" = "true" ]; then
-            python main.py
+            python main.py --count ${{ env.VIDEO_COUNT }}
           else
-            python main.py --test
+            python main.py --count ${{ env.VIDEO_COUNT }} --no-upload
           fi
       
       - name: Upload artifacts
