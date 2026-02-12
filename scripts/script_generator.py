@@ -19,19 +19,17 @@ class ScriptGenerator:
         self.api_key = self.config['gemini_api_key']
         self.topics = self.config['content']['topics']
     
-    def get_trending_topic(self, max_retries=3):
+    def get_trending_topic(self, max_retries=5):
         """Gemini API에서 요즘 조회수/구독이 잘 되는 트렌디한 주제를 추천받습니다."""
         try:
-            prompt = """현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 5개를 추천해주세요.
+            prompt = """현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 3개를 추천해주세요.
 
 요구사항:
 - 한국인을 타겟으로 하는 고-조회수 주제만
-- 2024-2025년 최신 트렌드 반영
 - 각 주제는 한 줄씩만 (30자 이내)
-- 금융, 심리, 건강, 연예, 기술, 사회 등 다양한 카테고리에서 선택
 
 다음 JSON 형식으로만 답변하세요:
-{{"topics":["주제1","주제2","주제3","주제4","주제5"]}}"""
+{{"topics":["주제1","주제2","주제3"]}}"""
             
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
             
@@ -44,17 +42,24 @@ class ScriptGenerator:
                             }]
                         }],
                         "generationConfig": {
-                            "temperature": 0.7,
-                            "maxOutputTokens": 200,
+                            "temperature": 0.5,
+                            "maxOutputTokens": 100,
                         }
                     }
                     
                     response = requests.post(url, json=payload, timeout=10)
                     
-                    # 429 Too Many Requests 처리
+                    # 429 Too Many Requests 처리 - Retry-After 헤더 우선 사용
                     if response.status_code == 429:
-                        wait_time = min(2 ** attempt + random.uniform(0, 1), 30)  # 지수 백오프
-                        print(f"⏳ API 요청 제한. {wait_time:.1f}초 대기 후 재시도 ({attempt + 1}/{max_retries})")
+                        # Retry-After 헤더에서 대기 시간 가져오기 (초 단위)
+                        retry_after = response.headers.get('Retry-After', None)
+                        if retry_after:
+                            wait_time = int(retry_after) + 2  # 여유 시간 추가
+                        else:
+                            # Retry-After 없으면 지수 백오프
+                            wait_time = min(2 ** attempt + random.uniform(0, 2), 60)
+                        
+                        print(f"⏳ API 레이트 제한 (429). {wait_time}초 대기 후 재시도 ({attempt + 1}/{max_retries})")
                         time.sleep(wait_time)
                         continue
                     
@@ -92,27 +97,31 @@ class ScriptGenerator:
                     print(f"⚠️ JSON 파싱 실패, 재시도 {attempt + 1}/{max_retries}: {str(e)[:50]}")
                 except requests.exceptions.Timeout:
                     print(f"⏱️ 요청 타임아웃, 재시도 {attempt + 1}/{max_retries}")
-                    time.sleep(1)
+                    time.sleep(2)
                 except requests.exceptions.RequestException as e:
                     print(f"⚠️ API 요청 오류, 재시도 {attempt + 1}/{max_retries}: {str(e)[:50]}")
                     time.sleep(1)
             
+            print("⚠️ 트렌디한 주제 추천 실패 - 고정 주제 사용으로 전환")
+        
         except Exception as e:
             print(f"⚠️ 트렌디한 주제 생성 실패: {str(e)[:100]}")
         
         return None
     
-    def generate_script(self, topic=None, max_retries=3):
+    def generate_script(self, topic=None, max_retries=5):
         """팩트 영상 대본을 생성합니다."""
         if topic is None:
-            # 70% 확률로 트렌디한 주제 추천, 30% 확률로 고정 주제 사용
-            use_trending = random.random() < 0.7
+            # 50% 확률로 트렌디한 주제 추천, 50% 확률로 고정 주제 사용 (레이트 제한 완화)
+            use_trending = random.random() < 0.5
             
             if use_trending:
                 trending = self.get_trending_topic()
                 if trending:
                     topic = random.choice(trending)
                     print(f"✅ 트렌디한 주제 선택: {topic}")
+                    # 트렌디한 주제 사용 후 3초 대기 (두 API 호출 사이의 레이트 제한 완화)
+                    time.sleep(3)
                 else:
                     topic = random.choice(self.topics)
                     print(f"📌 고정 주제 선택: {topic}")
@@ -167,10 +176,17 @@ JSON만 출력."""
                 
                 response = requests.post(url, json=payload, timeout=15)
                 
-                # 429 Too Many Requests 처리
+                # 429 Too Many Requests 처리 - Retry-After 헤더 우선 사용
                 if response.status_code == 429:
-                    wait_time = min(2 ** attempt + random.uniform(0, 1), 60)  # 지수 백오프
-                    print(f"⏳ API 요청 제한. {wait_time:.1f}초 대기 후 재시도 ({attempt + 1}/{max_retries})")
+                    # Retry-After 헤더에서 대기 시간 가져오기 (초 단위)
+                    retry_after = response.headers.get('Retry-After', None)
+                    if retry_after:
+                        wait_time = int(retry_after) + 2  # 여유 시간 추가
+                    else:
+                        # Retry-After 없으면 지수 백오프 (더 긴 대기)
+                        wait_time = min(2 ** attempt + random.uniform(0, 3), 120)
+                    
+                    print(f"⏳ API 레이트 제한 (429). {wait_time}초 대기 후 재시도 ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                     continue
                 
