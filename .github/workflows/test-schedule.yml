@@ -1,13 +1,13 @@
-name: Test Schedule - Single Run (Manual Trigger)
+name: Test Schedule - Auto Run at 00:40 KST
 
 on:
   schedule:
-    # ℹ️ 주의: cron 스케줄은 UTC 기준
-    # KST 2월 14일 00:40 = UTC 2월 13일 15:40
-    # 실제 테스트는 workflow_dispatch로 수동 실행 권장
-    - cron: '40 15 13 2 *'
+    # ⏰ KST 오전 12시 40분(00:40) 자동 실행
+    # KST 00:40 = UTC 15:40 (전날)
+    # 2월 13일 KST 00:40 = 2월 12일 UTC 15:40
+    - cron: '40 15 12 2 *'  # 자동 실행 (매년 2월 12일 UTC 15:40)
   
-  workflow_dispatch:  # 수동 실행: Actions 탭에서 "Run workflow" 클릭
+  workflow_dispatch:  # 수동 실행도 가능
 
 env:
   UPLOAD_ENABLED: 'true'  # 테스트이므로 업로드 활성화
