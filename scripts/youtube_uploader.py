@@ -178,8 +178,9 @@ class YouTubeUploader:
                 description = f"{script_data.get('title', '')}\n\n추천 정보를 제공하는 채널입니다.\n공감하셨다면 좋아요와 구독을 눌러주세요! 🙏"
             
             # 해시태그: 상위 5개 태그 + shorts 기본 태그
-            hashtags = " ".join([f"#{tag}" for tag in tags[:5]])  # 상위 5개 태그
-            description += f"\n\n{hashtags}\n#shorts"
+            hashtags = " ".join([f"{tag}" for tag in tags[:5]])  # 상위 5개 태그
+            description += f"\n\n{hashtags}"
+            title += f" {hashtags}"
             
             body = {
                 'snippet': {
