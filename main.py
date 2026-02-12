@@ -93,9 +93,12 @@ class YouTubeAutomation:
         
         if upload and self.config['upload']['auto_upload']:
             print("\n[4/4] 📤 YouTube 업로드 중...")
+            # 설정에서 지정된 채널 ID 가져오기
+            target_channel_id = self.config['youtube'].get('target_channel_id')
             upload_result = self.uploader.upload_video(
                 video_path, 
-                script_data
+                script_data,
+                channel_id=target_channel_id
             )
             if upload_result:
                 result['upload'] = upload_result

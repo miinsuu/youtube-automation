@@ -96,6 +96,14 @@ class YouTubeUploader:
                 return None
         
         try:
+            # 채널 ID 결정 (설정에서 지정된 채널 ID 사용)
+            target_channel_id = channel_id or self.config['youtube'].get('target_channel_id')
+            
+            if target_channel_id:
+                print(f"🎯 업로드 대상 채널: {target_channel_id}")
+            else:
+                print("⚠️ 채널 ID가 지정되지 않았습니다. 기본 채널로 업로드됩니다.")
+            
             # 비디오 메타데이터
             title = script_data['title']
             description = script_data.get('description', '')
