@@ -98,11 +98,22 @@ class YouTubeUploader:
         try:
             # 비디오 메타데이터
             title = script_data['title']
-            description = script_data['description']
-            tags = script_data['tags'] + self.config['upload']['default_tags']
+            description = script_data.get('description', '')
             
-            # 쇼츠 해시태그 추가
-            description += "\n\n#Shorts #쇼츠"
+            # 태그: 스크립트의 5개 태그 + 기본 태그
+            script_tags = script_data.get('tags', [])
+            if isinstance(script_tags, list):
+                tags = script_tags + self.config['upload']['default_tags']
+            else:
+                tags = self.config['upload']['default_tags']
+            
+            # 설명란 강화: 이미 풍성한 설명이 있으면 유지, 없으면 생성
+            if not description or len(description) < 50:
+                description = f"{script_data.get('title', '')}\n\n추천 정보를 제공하는 채널입니다.\n공감하셨다면 좋아요와 구독을 눌러주세요! 🙏"
+            
+            # 쇼츠 해시태그 + 태그 추가
+            hashtags = " ".join([f"#{tag}" for tag in tags[:5]])  # 상위 5개 태그
+            description += f"\n\n{hashtags}\n#Shorts #쇼츠"
             
             body = {
                 'snippet': {

@@ -530,7 +530,7 @@ class VideoGenerator:
                 clip = ImageClip(subtitle_img)
                 clip = clip.with_duration(duration)
                 clip = clip.with_start(start_time)
-                clip = clip.with_position(('center', int(self.height * 0.30)))
+                clip = clip.with_position(('center', int(self.height * 0.25)))
                 
                 clips.append(clip)
             
@@ -617,8 +617,8 @@ class VideoGenerator:
             clip = ImageClip(subtitle_img)
             clip = clip.with_duration(duration)
             clip = clip.with_start(start_time)
-            # 자막 위치: 상단에서 1/3 지점
-            clip = clip.with_position(('center', int(self.height * 0.30)))
+            # 자막 위치: 상단에서 1/4 지점 (높이 25%)
+            clip = clip.with_position(('center', int(self.height * 0.25)))
             
             clips.append(clip)
         
