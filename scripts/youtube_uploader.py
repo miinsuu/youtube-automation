@@ -162,7 +162,7 @@ class YouTubeUploader:
             return None
     
     def upload_thumbnail(self, video_id, thumbnail_path):
-        """썸네일 업로드"""
+        """썸네일 업로드 (권한 없으면 YouTube 자동 생성 썸네일 사용)"""
         try:
             self.youtube.thumbnails().set(
                 videoId=video_id,
@@ -170,7 +170,11 @@ class YouTubeUploader:
             ).execute()
             print(f"✅ 썸네일 업로드 완료")
         except Exception as e:
-            print(f"⚠️  썸네일 업로드 실패: {e}")
+            # 권한 없으면 자동 생성 썸네일 사용하므로 무시
+            if "insufficient" in str(e).lower() or "permission" in str(e).lower() or "forbidden" in str(e).lower():
+                print(f"ℹ️  커스텀 썸네일 업로드 불가 - YouTube 자동 생성 썸네일 사용 중")
+            else:
+                print(f"⚠️  썸네일 업로드 실패: {e}")
 
 
 if __name__ == "__main__":
