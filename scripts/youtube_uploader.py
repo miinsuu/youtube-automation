@@ -15,12 +15,21 @@ from googleapiclient.http import MediaFileUpload
 class YouTubeUploader:
     SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
     
-    def __init__(self, config_path="config/config.json"):
+    def __init__(self, config_path="config/config.json", channel_id=None):
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
         
         self.client_secrets = self.config['youtube']['client_secrets_file']
-        self.credentials_file = self.config['youtube']['credentials_file']
+        self.target_channel_id = channel_id or self.config['youtube'].get('target_channel_id')
+        
+        # 채널별 인증 정보 파일 지정
+        if self.target_channel_id:
+            # 채널 ID별로 다른 인증 파일 사용
+            channel_shortname = self.target_channel_id[-8:]  # 마지막 8자
+            self.credentials_file = f"config/youtube_credentials_{channel_shortname}.json"
+        else:
+            self.credentials_file = self.config['youtube']['credentials_file']
+        
         self.youtube = None
     
     def authenticate(self):
@@ -115,23 +124,39 @@ class YouTubeUploader:
     
     def upload_video(self, video_path, script_data, thumbnail_path=None, channel_id=None):
         """비디오를 YouTube에 업로드"""
+        
+        # 채널 ID 지정된 경우 새로운 업로더 인스턴스 생성
+        if channel_id and channel_id != self.target_channel_id:
+            uploader = YouTubeUploader(channel_id=channel_id)
+            return uploader.upload_video(video_path, script_data, thumbnail_path)
+        
         if not self.youtube:
             if not self.authenticate():
                 return None
         
         try:
-            # 채널 ID 결정 (설정에서 지정된 채널 ID 사용)
-            target_channel_id = channel_id or self.config['youtube'].get('target_channel_id')
+            # 현재 인증된 채널 확인
+            current_channel = self.get_authenticated_channel()
             
-            if target_channel_id:
-                print(f"🎯 업로드 대상 채널: {target_channel_id}")
-                # 현재 인증된 채널 확인
-                current_channel = self.get_authenticated_channel()
-                if current_channel and current_channel['id'] != target_channel_id:
-                    print(f"⚠️  경고: 현재 로그인 채널({current_channel['id']})과 대상 채널({target_channel_id})이 다릅니다!")
-                    print(f"   로그인한 계정의 기본 채널로 업로드됩니다.")
+            if not current_channel:
+                print("❌ 현재 채널을 확인할 수 없습니다.")
+                return None
+            
+            # 목표 채널과 현재 채널 비교
+            if self.target_channel_id:
+                print(f"🎯 업로드 대상 채널: {self.target_channel_id}")
+                print(f"✓ 현재 로그인 채널: {current_channel['title']} ({current_channel['id']})")
+                
+                if current_channel['id'] == self.target_channel_id:
+                    print(f"✅ 채널 일치! 해당 채널로 업로드됩니다.")
+                else:
+                    print(f"⚠️  채널 불일치!")
+                    print(f"   대상: {self.target_channel_id}")
+                    print(f"   현재: {current_channel['id']}")
+                    print(f"   다른 계정으로 로그인하거나 기본 채널을 변경해주세요.")
+                    return None
             else:
-                print("⚠️ 채널 ID가 지정되지 않았습니다. 기본 채널로 업로드됩니다.")
+                print(f"✓ 업로드 채널: {current_channel['title']} ({current_channel['id']})")
             
             # 비디오 메타데이터
             title = script_data['title']
