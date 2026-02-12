@@ -33,17 +33,22 @@ class VideoGenerator:
         self.font_path = self._find_korean_font()
     
     def _find_korean_font(self):
-        """시스템에서 한글 폰트 찾기"""
+        """시스템에서 한글 폰트 찾기 (GitHub Actions 지원)"""
         # macOS 폰트 경로들
         font_paths = [
             "/System/Library/Fonts/AppleSDGothicNeo.ttc",
             "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
             "/Library/Fonts/AppleGothic.ttf",
             "/System/Library/Fonts/Helvetica.ttc",
-            # Linux 폰트 경로들
+            # Linux 폰트 경로들 (GitHub Actions)
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
             "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
             "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            # 추가 Linux 경로
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         ]
         
         for path in font_paths:
@@ -439,43 +444,105 @@ class VideoGenerator:
         return CompositeVideoClip(clips, size=(self.width, self.height)).with_fps(self.fps)
     
     def _create_subtitle_image(self, text, font_size=80):
-        """PIL로 자막 이미지 생성 (한글 지원)"""
-        # 투명 배경 이미지
-        img = Image.new('RGBA', (self.width, 400), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        """PIL로 자막 이미지 생성 (한글 지원, 단어 단위 줄바꿈)"""
+        # 일단 임시 이미지로 텍스트 크기 측정
+        temp_img = Image.new('RGBA', (self.width, 400), (0, 0, 0, 0))
+        temp_draw = ImageDraw.Draw(temp_img)
         
-        # 폰트 로드
+        # 폰트 로드 (GitHub Actions 호환)
+        font = None
         try:
             if self.font_path:
                 font = ImageFont.truetype(self.font_path, font_size)
             else:
-                font = ImageFont.load_default()
+                # GitHub Actions에서 폴백
+                fallback_fonts = [
+                    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+                ]
+                for font_path in fallback_fonts:
+                    if os.path.exists(font_path):
+                        try:
+                            font = ImageFont.truetype(font_path, font_size)
+                            break
+                        except:
+                            continue
         except:
+            pass
+        
+        if not font:
             font = ImageFont.load_default()
         
-        # 텍스트 줄바꿈 처리 (최대 2줄)
+        # 텍스트 줄바꿈 처리 - 단어 단위로 줄바꿈 (문자 단위 아님)
+        # 최대 2줄이 기본이지만, 문장이 길면 3줄 이상까지 허용 (문장이 잘리지 않도록)
         max_width = self.width - 120
         lines = []
         current_line = ""
         
-        for char in text:
-            test_line = current_line + char
-            bbox = draw.textbbox((0, 0), test_line, font=font)
+        # 공백 단위로 단어 분할 (띄어쓰기 기준)
+        words = text.split(' ')
+        
+        for word in words:
+            # 현재 줄에 단어 추가 시도
+            test_line = current_line + (' ' if current_line else '') + word
+            bbox = temp_draw.textbbox((0, 0), test_line, font=font)
+            
             if bbox[2] - bbox[0] <= max_width:
+                # 단어가 들어감
                 current_line = test_line
             else:
+                # 단어가 들어가지 않음
                 if current_line:
+                    # 현재 줄 저장하고 새로운 줄에 단어 추가
                     lines.append(current_line)
-                current_line = char
-                # 최대 2줄까지만
-                if len(lines) >= 2:
-                    break
-        if current_line and len(lines) < 2:
+                    current_line = word
+                else:
+                    # 현재 줄이 비어있는데도 단어가 너무 긴 경우
+                    # 어쩔 수 없이 단어 자체를 줄로 추가
+                    lines.append(word)
+                    current_line = ""
+        
+        if current_line:
             lines.append(current_line)
         
-        # 텍스트 그리기 (그림자 + 외곽선 + 흰색 본문)
-        y_offset = 30
+        # 필요한 이미지 높이 계산 (줄 수에 따라 동적 조정)
         line_height = font_size + 25
+        padding = 20
+        text_bg_height = len(lines) * line_height + (padding * 2)
+        img_height = text_bg_height + 40  # 위아래 여유
+        
+        # 최종 이미지 생성 (높이는 동적)
+        img = Image.new('RGBA', (self.width, img_height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        
+        # 검정색 배경 박스 그리기 (시인성 개선)
+        # 텍스트 영역을 포함하는 검정색 박스
+        box_top = 20
+        box_bottom = box_top + text_bg_height
+        box_left = 40
+        box_right = self.width - 40
+        
+        # 검정색 박스 (약간의 투명도 포함)
+        box_img = Image.new('RGBA', (self.width, img_height), (0, 0, 0, 0))
+        box_draw = ImageDraw.Draw(box_img)
+        box_draw.rectangle(
+            [(box_left, box_top), (box_right, box_bottom)],
+            fill=(0, 0, 0, 220)  # 검정색, 약간 투명
+        )
+        # 테두리 (진한 검정)
+        box_draw.rectangle(
+            [(box_left, box_top), (box_right, box_bottom)],
+            outline=(0, 0, 0, 255),
+            width=3
+        )
+        
+        # 박스 이미지 합성
+        img = Image.alpha_composite(img, box_img)
+        draw = ImageDraw.Draw(img)
+        
+        # 텍스트 그리기 (그림자 + 외곽선 + 흰색 본문)
+        y_offset = box_top + padding
         
         for line in lines:
             bbox = draw.textbbox((0, 0), line, font=font)
@@ -633,13 +700,29 @@ class VideoGenerator:
         
         draw = ImageDraw.Draw(img)
         
-        # 한글 폰트 로드
+        # 한글 폰트 로드 (GitHub Actions 호환)
+        font = None
         try:
             if self.font_path:
                 font = ImageFont.truetype(self.font_path, 100)
             else:
-                font = ImageFont.load_default()
+                # GitHub Actions에서 폴백
+                fallback_fonts = [
+                    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+                ]
+                for font_path in fallback_fonts:
+                    if os.path.exists(font_path):
+                        try:
+                            font = ImageFont.truetype(font_path, 100)
+                            break
+                        except:
+                            continue
         except:
+            pass
+        
+        if not font:
             font = ImageFont.load_default()
         
         # 텍스트 줄바꿈

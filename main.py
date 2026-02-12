@@ -59,20 +59,15 @@ class YouTubeAutomation:
         self.script_gen.save_script(script_data, script_path)
         
         # 2. TTS 생성
-        print("\n[2/5] 🎤 음성 생성 중...")
+        print("\n[2/4] 🎤 음성 생성 중...")
         audio_path = f"output/audio/audio_{timestamp}.mp3"
         audio_result = self.tts_gen.text_to_speech(script_data['script'], audio_path)
         if not audio_result:
             print("❌ 음성 생성 실패")
             return None
         
-        # 3. 썸네일 생성
-        print("\n[3/5] 🖼️  썸네일 생성 중...")
-        thumbnail_path = f"output/images/thumbnail_{timestamp}.png"
-        self.video_gen.create_thumbnail(script_data['thumbnail_text'], thumbnail_path)
-        
-        # 4. 비디오 생성 (음성 타이밍 정보 전달)
-        print("\n[4/5] 🎬 비디오 생성 중...")
+        # 3. 비디오 생성 (음성 타이밍 정보 전달)
+        print("\n[3/4] 🎬 비디오 생성 중...")
         video_path = f"output/videos/video_{timestamp}.mp4"
         sentence_timings = audio_result.get('sentence_timings', None)
         final_video = self.video_gen.create_video(script_data, audio_path, video_path, sentence_timings=sentence_timings)
@@ -80,21 +75,19 @@ class YouTubeAutomation:
             print("❌ 비디오 생성 실패")
             return None
         
-        # 5. YouTube 업로드
+        # 4. YouTube 업로드
         result = {
             'script': script_data,
             'audio_path': audio_path,
             'video_path': video_path,
-            'thumbnail_path': thumbnail_path,
             'timestamp': timestamp
         }
         
         if upload and self.config['upload']['auto_upload']:
-            print("\n[5/5] 📤 YouTube 업로드 중...")
+            print("\n[4/4] 📤 YouTube 업로드 중...")
             upload_result = self.uploader.upload_video(
                 video_path, 
-                script_data, 
-                thumbnail_path
+                script_data
             )
             if upload_result:
                 result['upload'] = upload_result
@@ -103,7 +96,7 @@ class YouTubeAutomation:
             else:
                 print("\n⚠️  비디오는 생성되었지만 업로드에 실패했습니다.")
         else:
-            print("\n[5/5] ⏭️  업로드 건너뛰기")
+            print("\n[4/4] ⏭️  업로드 건너뛰기")
             print(f"\n✅ 비디오 생성 완료: {video_path}")
         
         # 로그 저장
