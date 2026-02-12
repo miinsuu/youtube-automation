@@ -44,10 +44,11 @@ brew install ffmpeg
 
 ### 2. API 키 발급
 
-#### OpenAI API 키
-1. https://platform.openai.com/api-keys 접속
-2. "Create new secret key" 클릭
-3. 생성된 키를 복사 (sk-로 시작)
+#### 🚀 Groq API 키 (완전 무료!)
+1. https://console.groq.com 접속
+2. 무료 계정 가입 (신용카드 없음)
+3. API 키 발급
+4. `config/config.json`에서 `groq_api_key` 입력
 
 #### YouTube API 설정
 1. https://console.cloud.google.com/ 접속
@@ -74,8 +75,8 @@ nano config/config.json
 ```
 
 다음 항목을 수정하세요:
-- `openai_api_key`: OpenAI API 키 입력
-- `youtube.client_secrets_file`: 다운로드한 client_secrets.json 경로
+- `groq_api_key`: Groq API 키 입력 (https://console.groq.com)
+- `youtube.target_channel_id`: 업로드할 YouTube 채널 ID
 
 #### YouTube 인증 파일 배치
 ```bash
