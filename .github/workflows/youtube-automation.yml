@@ -112,6 +112,10 @@ jobs:
           hf_token = '${{ secrets.HUGGINGFACE_TOKEN }}'
           if hf_token:
               config['huggingface_token'] = hf_token
+          # Together AI API 키
+          together_key = '${{ secrets.TOGETHER_API_KEY }}'
+          if together_key:
+              config['together_api_key'] = together_key
           upload_flag = '${{ env.UPLOAD_ENABLED }}'
           config['scheduler']['upload_enabled'] = (upload_flag == 'true')
           with open('config/config.json', 'w') as f:
