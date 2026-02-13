@@ -11,14 +11,14 @@ from datetime import datetime
 import argparse
 
 # 모듈 임포트
-sys.path.append('scripts')
-from script_generator import ScriptGenerator
-from longform_script_generator import LongformScriptGenerator
-from tts_generator import TTSGenerator
-from video_generator import VideoGenerator
-from longform_video_generator import LongformVideoGenerator
-from youtube_uploader import YouTubeUploader
-from thumbnail_generator import ThumbnailGenerator
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
+from script_generator import ScriptGenerator  # type: ignore
+from longform_script_generator import LongformScriptGenerator  # type: ignore
+from tts_generator import TTSGenerator  # type: ignore
+from video_generator import VideoGenerator  # type: ignore
+from longform_video_generator import LongformVideoGenerator  # type: ignore
+from youtube_uploader import YouTubeUploader  # type: ignore
+from thumbnail_generator import ThumbnailGenerator  # type: ignore
 
 
 class YouTubeAutomation:

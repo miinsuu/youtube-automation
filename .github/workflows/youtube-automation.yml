@@ -40,6 +40,7 @@ on:
 env:
   UPLOAD_ENABLED: ${{ github.event.inputs.upload || 'true' }}
   VIDEO_COUNT: ${{ github.event.inputs.count || '1' }}
+  VIDEO_TYPE: ${{ github.event.inputs.type || 'shorts' }}
 
 jobs:
   create-and-upload:

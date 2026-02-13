@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
 
-from youtube_uploader import YouTubeUploader
+from youtube_uploader import YouTubeUploader  # type: ignore
 import json
 
 def print_header(text):
