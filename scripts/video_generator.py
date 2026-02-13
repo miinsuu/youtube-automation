@@ -18,7 +18,7 @@ try:
     )
 except ImportError:
     print("⚠️ moviepy 2.x import 실패, moviepy.editor에서 시도...")
-    from moviepy.editor import (
+    from moviepy.editor import (  # type: ignore
         ColorClip, AudioFileClip, CompositeVideoClip,
         TextClip, concatenate_videoclips, ImageClip, VideoClip
     )

@@ -20,7 +20,7 @@ try:
         TextClip, concatenate_videoclips, ImageClip
     )
 except ImportError:
-    from moviepy.editor import (
+    from moviepy.editor import (  # type: ignore
         ColorClip, AudioFileClip, CompositeVideoClip,
         TextClip, concatenate_videoclips, ImageClip
     )
