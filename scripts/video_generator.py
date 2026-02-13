@@ -746,21 +746,56 @@ class VideoGenerator:
             print(f"   📝 음성 타이밍 기반 자막 생성 ({len(sentence_timings)}개 문장)")
             clips = []
             
+            # ── 1단계: TTS 타이밍을 개별 문장으로 분리 ──
+            # Edge TTS SentenceBoundary가 "첫째, ~~~. 그래서~~~." 을 하나로 묶는 경우 분리
+            split_timings = []
             for i, timing in enumerate(sentence_timings):
-                text = timing["text"]
+                text = timing["text"].strip()
                 start_time = timing["start"]
-                # 다음 문장 시작까지 또는 오디오 끝까지
                 if i < len(sentence_timings) - 1:
                     end_time = sentence_timings[i + 1]["start"]
                 else:
                     end_time = audio_duration
+                total_dur = end_time - start_time
                 
-                duration = end_time - start_time
+                # 문장 부호(. ! ?)로 분리 시도 (부호 포함)
+                sub_sents = re.split(r'(?<=[.!?])\s+', text)
+                sub_sents = [s.strip() for s in sub_sents if s.strip()]
                 
-                # 너무 긴 문장은 분리
-                if len(text) > 40:
-                    # 쉼표나 조사 위치에서 분리하여 별도 표시
-                    pass  # 한 자막으로 표시하되 줄바꿈 처리
+                if len(sub_sents) > 1:
+                    # 글자 수 비례로 시간 분배
+                    total_chars = sum(len(s) for s in sub_sents)
+                    cur_start = start_time
+                    for j, sub in enumerate(sub_sents):
+                        ratio = len(sub) / total_chars if total_chars > 0 else 1.0 / len(sub_sents)
+                        sub_dur = total_dur * ratio
+                        split_timings.append({
+                            "text": sub,
+                            "start": cur_start,
+                            "end": cur_start + sub_dur,
+                            "original_index": i
+                        })
+                        cur_start += sub_dur
+                else:
+                    split_timings.append({
+                        "text": text,
+                        "start": start_time,
+                        "end": end_time,
+                        "original_index": i
+                    })
+            
+            total_split = len(split_timings)
+            print(f"   📝 문장 분리 후 자막 {total_split}개")
+            
+            # ── 2단계: 각 분리된 문장에 색상/볼드 결정 + 클립 생성 ──
+            for idx, st in enumerate(split_timings):
+                text = st["text"]
+                start_time = st["start"]
+                duration = st["end"] - st["start"]
+                orig_i = st["original_index"]
+                
+                if duration < 0.05:
+                    continue
                 
                 # 문장 유형에 따라 색상/볼드 결정
                 RED = (255, 0, 0, 255)
@@ -768,14 +803,14 @@ class VideoGenerator:
                 tc = WHITE
                 bold = False
                 
-                if i == 0:  # 인트로 (첫 문장)
+                if orig_i == 0 and idx == 0:  # 인트로 (첫 문장)
                     tc = RED
                 elif re.search(r'\d+가지', text):  # N가지
                     tc = RED
                     bold = True
-                elif re.match(r'^(첫째|둘째|셋째)', text):  # 순서 문장
+                elif re.match(r'^(첫째|둘째|셋째)', text):  # 순서 문장 (해당 문장만)
                     tc = RED
-                elif i == len(sentence_timings) - 1:  # 아웃트로 (마지막)
+                elif orig_i == len(sentence_timings) - 1 and idx == total_split - 1:  # 아웃트로 (마지막)
                     tc = RED
                 
                 # PIL로 자막 이미지 생성
