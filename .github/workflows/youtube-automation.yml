@@ -1,29 +1,26 @@
-name: YouTube Shorts Auto Upload
+name: YouTube Shorts & Longform Auto Upload
 
 on:
   schedule:
     # ⏰ 시간대 변환: KST - 9시간 = UTC
-    # 예: KST 12:00 - 9시간 = UTC 03:00
-    
-    # 평일 (월-금): 1=월, 2=화, 3=수, 4=목, 5=금
-    - cron: '0 23 * * 0'    # 일 23:00 UTC = 월 08:00 KST
-    - cron: '0 23 * * 1-5'  # 월-금 23:00 UTC = 08:00 KST
-    - cron: '0 3 * * 1-5'   # 월-금 03:00 UTC = 12:00 KST
-    - cron: '0 6 * * 1-5'   # 월-금 06:00 UTC = 15:00 KST
-    - cron: '0 9 * * 1-5'   # 월-금 09:00 UTC = 18:00 KST
-    - cron: '0 13 * * 1-5'  # 월-금 13:00 UTC = 22:00 KST
-    
-    # 주말 (토-일): 0=일, 6=토
-    - cron: '0 0 * * 0,6'   # 토-일 00:00 UTC = 09:00 KST
-    - cron: '0 3 * * 0,6'   # 토-일 03:00 UTC = 12:00 KST
-    - cron: '0 6 * * 0,6'   # 토-일 06:00 UTC = 15:00 KST
-    - cron: '0 9 * * 0,6'   # 토-일 09:00 UTC = 18:00 KST
-    - cron: '0 13 * * 0,6'  # 토-일 13:00 UTC = 22:00 KST
+    # 🎬 쇼츠: 매일 3회 / 롱폼: 매일 1회 (17:30 KST만)
+    - cron: '30 2 * * *'     # 매일 02:30 UTC = 11:30 KST (쇼츠만)
+    - cron: '30 8 * * *'     # 매일 08:30 UTC = 17:30 KST (쇼츠 + 롱폼)
+    - cron: '30 12 * * *'    # 매일 12:30 UTC = 21:30 KST (쇼츠만)
   
   workflow_dispatch:  # 수동 실행 가능
     inputs:
+      type:
+        description: 'Video type to generate'
+        required: true
+        default: 'shorts'
+        type: choice
+        options:
+          - 'shorts'
+          - 'longform'
+          - 'both'
       count:
-        description: 'Number of videos to generate (1-10)'
+        description: 'Number of videos to generate (shorts only)'
         required: false
         default: '1'
         type: choice
@@ -31,13 +28,6 @@ on:
           - '1'
           - '2'
           - '3'
-          - '4'
-          - '5'
-          - '6'
-          - '7'
-          - '8'
-          - '9'
-          - '10'
       upload:
         description: 'Enable YouTube upload'
         required: true
@@ -56,6 +46,20 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Determine video type
+        id: set-type
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 수동 실행: 사용자 선택값 사용
+            echo "VIDEO_TYPE=${{ github.event.inputs.type }}" >> $GITHUB_ENV
+          elif [ "${{ github.event.schedule }}" = "30 8 * * *" ]; then
+            # 17:30 KST: 쇼츠 + 롱폼
+            echo "VIDEO_TYPE=both" >> $GITHUB_ENV
+          else
+            # 11:30, 21:30 KST: 쇼츠만
+            echo "VIDEO_TYPE=shorts" >> $GITHUB_ENV
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
       
@@ -91,14 +95,23 @@ jobs:
         run: |
           mkdir -p config
           echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > config/client_secrets.json
+          
+          # 채널 ID에 맞는 인증 파일명 생성 (YouTubeUploader의 네이밍 규칙 일치)
           echo '${{ secrets.YOUTUBE_CREDENTIALS }}' > config/youtube_credentials.json
+          echo '${{ secrets.YOUTUBE_CREDENTIALS }}' > config/youtube_credentials_L4y1Qbdg.json
           
           # Update config with API keys
           python -c "
           import json
           with open('config/config.json', 'r') as f:
               config = json.load(f)
-          config['gemini_api_key'] = '${{ secrets.GEMINI_API_KEY }}'
+          gemini_key = '${{ secrets.GEMINI_API_KEY }}'
+          if gemini_key:
+              config['gemini_api_key'] = gemini_key
+          # HuggingFace 토큰 (시크릿이 있으면 사용, 없으면 config.json 값 유지)
+          hf_token = '${{ secrets.HUGGINGFACE_TOKEN }}'
+          if hf_token:
+              config['huggingface_token'] = hf_token
           upload_flag = '${{ env.UPLOAD_ENABLED }}'
           config['scheduler']['upload_enabled'] = (upload_flag == 'true')
           with open('config/config.json', 'w') as f:
@@ -108,9 +121,9 @@ jobs:
       - name: Create video
         run: |
           if [ "${{ env.UPLOAD_ENABLED }}" = "true" ]; then
-            python main.py --count ${{ env.VIDEO_COUNT }}
+            python main.py --type ${{ env.VIDEO_TYPE }} --count ${{ env.VIDEO_COUNT }}
           else
-            python main.py --count ${{ env.VIDEO_COUNT }} --no-upload
+            python main.py --type ${{ env.VIDEO_TYPE }} --count ${{ env.VIDEO_COUNT }} --no-upload
           fi
       
       - name: Upload artifacts
@@ -119,6 +132,9 @@ jobs:
           name: generated-video-${{ github.run_number }}
           path: |
             output/videos/*.mp4
+            output/longform_videos/*.mp4
+            output/thumbnails/*.jpg
             output/images/*.png
+            output/longform_images/*.jpg
             logs/*.json
           retention-days: 7

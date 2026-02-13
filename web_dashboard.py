@@ -195,8 +195,12 @@ def recent_scripts():
 def get_config():
     """설정 조회"""
     config = load_config()
+    shorts_topics_count = len(config['content']['shorts']['topics'])
+    longform_topics_count = len(config['content']['longform']['topics'])
     return jsonify({
-        'topics_count': len(config['content']['topics']),
+        'shorts_topics_count': shorts_topics_count,
+        'longform_topics_count': longform_topics_count,
+        'total_topics_count': shorts_topics_count + longform_topics_count,
         'tts_voice': config['tts']['voice'],
         'upload_enabled': config['upload']['auto_upload'],
         'scheduler_enabled': config['scheduler']['enabled']

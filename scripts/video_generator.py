@@ -1,21 +1,27 @@
 """
 비디오 생성 모듈
 MoviePy를 사용하여 음성, 배경, 자막을 합성하여 최종 영상을 생성합니다.
-AI 이미지 생성 (Pollinations.ai)도 지원합니다.
+AI 이미지 생성: HuggingFace FLUX.1-schnell (1순위) → Together AI (2순위) → Pexels (3순위)
 """
 
 import json
 import os
 import requests
-import subprocess
 import sys
 import time
 import io
-from contextlib import redirect_stdout, redirect_stderr
-from moviepy import (
-    ColorClip, AudioFileClip, CompositeVideoClip, 
-    TextClip, concatenate_videoclips, ImageClip, VideoClip
-)
+from contextlib import redirect_stdout
+try:
+    from moviepy import (
+        ColorClip, AudioFileClip, CompositeVideoClip,
+        TextClip, concatenate_videoclips, ImageClip, VideoClip
+    )
+except ImportError:
+    print("⚠️ moviepy 2.x import 실패, moviepy.editor에서 시도...")
+    from moviepy.editor import (
+        ColorClip, AudioFileClip, CompositeVideoClip,
+        TextClip, concatenate_videoclips, ImageClip, VideoClip
+    )
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import numpy as np
 
@@ -24,136 +30,160 @@ class VideoGenerator:
     def __init__(self, config_path="config/config.json"):
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
-        
-        # 비디오 설정
-        res = self.config['video']['resolution'].split('x')
+
+        # 쇼츠 비디오 설정
+        shorts_config = self.config['video']['shorts']
+        res = shorts_config['resolution'].split('x')
         self.width = int(res[0])
         self.height = int(res[1])
-        self.fps = self.config['video']['fps']
-        self.bg_color = self.config['video']['background_color']
-        self.text_color = self.config['video']['text_color']
-        self.accent_color = self.config['video']['accent_color']
-        
+        self.fps = shorts_config['fps']
+        self.bg_color = shorts_config['background_color']
+        self.text_color = shorts_config['text_color']
+        self.accent_color = shorts_config['accent_color']
+
+        # AI 이미지 생성 설정
+        self.hf_token = self.config.get('huggingface_token', '')
+        self.together_api_key = self.config.get('together_api_key', '')
+        self.pexels_api_key = self.config.get('pexels_api_key', '')
+
         # 한글 폰트 찾기
         self.font_path = self._find_korean_font()
-    
-    def generate_ai_prompts(self, script_data):
-        """대본을 기반으로 5개의 AI 이미지 생성 프롬프트 생성"""
-        script_text = script_data.get('script', '')
-        title = script_data.get('title', '')
-        topic = script_data.get('topic', '')
-        
-        # 프롬프트 구조: [인트로, 섹션1, 섹션2, 섹션3, 아웃트로]
-        prompts = []
-        
-        # 1. 인트로 - 임팩트 있는 이미지
-        intro_prompt = f"Professional cinematic intro image for '{title}', dynamic lighting, 4K quality, modern aesthetic, vibrant colors"
-        prompts.append(("intro", intro_prompt))
-        
-        # 대본을 3개의 섹션으로 분할
-        sentences = script_text.split('.')
-        section_size = len(sentences) // 3
-        
-        section_texts = [
-            '.'.join(sentences[:section_size]),
-            '.'.join(sentences[section_size:section_size*2]),
-            '.'.join(sentences[section_size*2:])
-        ]
-        
-        # 2-4. 섹션별 이미지 (대본의 핵심 키워드 추출)
-        for i, section_text in enumerate(section_texts, 1):
-            # 핵심 키워드 추출 (첫 10글자 + 주제)
-            keywords = section_text[:30] if section_text else topic
-            
-            section_prompt = f"Professional educational visual for '{keywords}', informative graphic, modern design, high quality, {topic}, cinematic lighting, 4K"
-            prompts.append((f"section{i}", section_prompt))
-        
-        # 5. 아웃트로 - 마무리 이미지
-        outro_prompt = f"Professional outro image, success and achievement theme, {title}, modern aesthetic, inspiring visual, 4K quality"
-        prompts.append(("outro", outro_prompt))
-        
-        return prompts
-    
-    def generate_ai_image(self, prompt, output_path, retry_count=3):
-        """AI 이미지 생성 - 여러 서비스 시도 (Unsplash API 폴백)"""
-        try:
-            print(f"🎨 AI 이미지 생성 중: {output_path}")
-            
-            # Pollinations.ai 시도 (현재 문제가 있음)
-            url = "https://image.pollinations.ai/prompt/" + prompt.replace(' ', '%20')
-            
-            for attempt in range(retry_count):
-                try:
-                    response = requests.get(url, timeout=30, stream=True)
-                    
-                    if response.status_code == 200 and response.headers.get('content-type', '').startswith('image'):
-                        # 이미지 저장
-                        with open(output_path, 'wb') as f:
-                            f.write(response.content)
-                        
-                        # 이미지 검증
-                        try:
-                            img = Image.open(output_path)
-                            if img.size[0] > 100:  # 유효한 이미지 확인
-                                print(f"✅ AI 이미지 생성 완료: {output_path}")
-                                return output_path
-                        except:
-                            pass
-                    
-                    print(f"⚠️ 이미지 형식 오류, 재시도 {attempt+1}/{retry_count}")
-                    time.sleep(2)
-                
-                except Exception as e:
-                    print(f"⚠️ 오류: {e}, 재시도 {attempt+1}/{retry_count}")
-                    time.sleep(2)
-            
-            print(f"❌ AI 이미지 생성 실패, 폴백 이미지 사용")
+
+    # ──────────────────────────────────────────────────
+    # AI 이미지 생성 (3-tier 폴백)
+    # ──────────────────────────────────────────────────
+    def generate_ai_image_huggingface(self, prompt, retry_count=2):
+        """HuggingFace FLUX.1-schnell로 이미지 생성 (9:16 세로)"""
+        if not self.hf_token:
             return None
-            
-        except Exception as e:
-            print(f"❌ AI 이미지 생성 오류: {e}")
+
+        url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+        headers = {
+            "Authorization": f"Bearer {self.hf_token}",
+            "Content-Type": "application/json",
+        }
+        # 9:16 비율 → 768x1344
+        payload = {
+            "inputs": prompt,
+            "parameters": {"width": 768, "height": 1344},
+        }
+
+        for attempt in range(retry_count):
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=60)
+                if resp.status_code == 200 and resp.headers.get('content-type', '').startswith('image'):
+                    img = Image.open(io.BytesIO(resp.content))
+                    if img.size[0] > 100:
+                        return img
+                print(f"   ⚠️ HF 응답 코드 {resp.status_code}, 재시도 {attempt+1}/{retry_count}")
+                time.sleep(3)
+            except Exception as e:
+                print(f"   ⚠️ HF 오류: {str(e)[:80]}, 재시도 {attempt+1}/{retry_count}")
+                time.sleep(3)
+        return None
+
+    def generate_ai_image_together(self, prompt, retry_count=2):
+        """Together AI FLUX.1-schnell로 이미지 생성 (9:16 세로)"""
+        if not self.together_api_key:
             return None
-    
+
+        url = "https://api.together.xyz/v1/images/generations"
+        headers = {
+            "Authorization": f"Bearer {self.together_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "black-forest-labs/FLUX.1-schnell-Free",
+            "prompt": prompt,
+            "width": 768,
+            "height": 1344,
+            "n": 1,
+        }
+
+        for attempt in range(retry_count):
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=60)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    img_data = data.get('data', [{}])[0]
+                    if 'b64_json' in img_data:
+                        import base64
+                        img_bytes = base64.b64decode(img_data['b64_json'])
+                        img = Image.open(io.BytesIO(img_bytes))
+                        return img
+                    elif 'url' in img_data:
+                        img_resp = requests.get(img_data['url'], timeout=30)
+                        if img_resp.status_code == 200:
+                            img = Image.open(io.BytesIO(img_resp.content))
+                            return img
+                print(f"   ⚠️ Together 응답 코드 {resp.status_code}, 재시도 {attempt+1}/{retry_count}")
+                time.sleep(3)
+            except Exception as e:
+                print(f"   ⚠️ Together 오류: {str(e)[:80]}, 재시도 {attempt+1}/{retry_count}")
+                time.sleep(3)
+        return None
+
+    def generate_ai_image(self, prompt, section_name="image"):
+        """3-tier 폴백: HuggingFace → Together AI → Pexels"""
+        # 프롬프트에서 --ar 9:16 등 제거 (API는 width/height 파라미터 사용)
+        import re
+        clean_prompt = re.sub(r'--\w+\s+\S+', '', prompt).strip()
+
+        # 1차: HuggingFace FLUX.1-schnell
+        print(f"   🎨 [{section_name}] HuggingFace 이미지 생성 중...")
+        img = self.generate_ai_image_huggingface(clean_prompt)
+        if img:
+            print(f"   ✅ [{section_name}] HuggingFace 성공")
+            return img
+
+        # 2차: Together AI
+        if self.together_api_key:
+            print(f"   🎨 [{section_name}] Together AI 폴백...")
+            img = self.generate_ai_image_together(clean_prompt)
+            if img:
+                print(f"   ✅ [{section_name}] Together AI 성공")
+                return img
+
+        # 3차: Pexels 키워드 검색
+        print(f"   📷 [{section_name}] Pexels 폴백...")
+        # 프롬프트에서 영어 키워드 추출
+        keywords = ' '.join(clean_prompt.split()[:5])
+        pexels_images = self.download_background_images(keywords, count=1, script_text="")
+        if pexels_images:
+            print(f"   ✅ [{section_name}] Pexels 성공")
+            return pexels_images[0]
+
+        # 최종 폴백: 그라디언트
+        print(f"   🎨 [{section_name}] 그라디언트 폴백")
+        return self._create_gradient_image()
+
     def generate_ai_background_images(self, script_data, use_ai=True):
-        """AI로 5개의 배경 이미지 생성 (인트로, 섹션3개, 아웃트로)"""
+        """script_data의 image_prompts를 사용해 5개 AI 배경 이미지 생성"""
         if not use_ai:
             print("ℹ️ AI 이미지 생성 비활성화, 기존 방식 사용")
             return None
-        
+
+        image_prompts = script_data.get('image_prompts', [])
+        if not image_prompts or len(image_prompts) < 5:
+            print("⚠️ image_prompts가 5개 미만, 기존 방식 사용")
+            return None
+
         try:
             print("🎨 AI 배경 이미지 생성 시작 (5장)...")
-            
-            # AI 이미지 생성 프롬프트 생성
-            prompts = self.generate_ai_prompts(script_data)
-            
+            section_names = ["intro", "section1", "section2", "section3", "outro"]
             ai_images = []
-            timestamp = int(time.time())
-            
-            for section, prompt in prompts:
-                ai_image_path = f"output/images/ai_bg_{section}_{timestamp}.png"
-                
-                # AI 이미지 생성
-                result_path = self.generate_ai_image(prompt, ai_image_path)
-                
-                if result_path and os.path.exists(result_path):
-                    try:
-                        img = Image.open(result_path)
-                        img = self._resize_and_crop(img)
-                        ai_images.append((section, img))
-                        print(f"✅ {section} 이미지 생성 완료")
-                    except Exception as e:
-                        print(f"⚠️ {section} 이미지 처리 실패: {e}")
-                
-                # API 속도 제한 방지
-                time.sleep(1)
-            
-            if len(ai_images) == 5:
-                print(f"✅ 총 5개 AI 배경 이미지 생성 완료!")
-                return ai_images
-            else:
-                print(f"⚠️ {len(ai_images)}/5개만 생성됨, 부분 AI 사용")
-                return ai_images if ai_images else None
-                
+
+            for i, (section, prompt) in enumerate(zip(section_names, image_prompts)):
+                img = self.generate_ai_image(prompt, section_name=section)
+                img = self._resize_and_crop(img)
+                ai_images.append((section, img))
+                # API 속도 제한 방지 (마지막 이미지 후에는 대기 불필요)
+                if i < 4:
+                    time.sleep(1.5)
+
+            print(f"✅ 총 {len(ai_images)}개 AI 배경 이미지 생성 완료!")
+            return ai_images
+
         except Exception as e:
             print(f"❌ AI 배경 이미지 생성 실패: {e}")
             return None
@@ -336,7 +366,7 @@ class VideoGenerator:
         import random
         
         images = []
-        pexels_api_key = "***REMOVED***"
+        pexels_api_key = self.config.get('pexels_api_key', '')
         
         try:
             # 대본에서 키워드 추출 (매번 다른 결과)
@@ -546,8 +576,8 @@ class VideoGenerator:
         
         return img
 
-    def create_background_video(self, images, duration):
-        """배경 이미지들로 비디오 클립 생성 (Ken Burns 효과)"""
+    def create_background_video(self, images, duration, section_times=None):
+        """배경 이미지들로 비디오 클립 생성 (섹션 타이밍 동기화)"""
         if not images:
             return ColorClip(
                 size=(self.width, self.height),
@@ -556,21 +586,33 @@ class VideoGenerator:
             ).with_fps(self.fps)
         
         clips = []
-        time_per_image = duration / len(images)
         
-        for i, img in enumerate(images):
-            # PIL 이미지를 numpy 배열로 변환
-            img_array = np.array(img)
-            
-            # ImageClip 생성
-            clip = ImageClip(img_array).with_duration(time_per_image)
-            clip = clip.with_start(i * time_per_image)
-            clips.append(clip)
+        # 섹션 타이밍이 있으면 섹션별로 이미지 배치
+        if section_times and len(section_times) == len(images) + 1:
+            print(f"   🖼️  섹션 타이밍 기반 이미지 배치 ({len(images)}장)")
+            for i, img in enumerate(images):
+                start = section_times[i]
+                end = section_times[i + 1]
+                dur = max(0.1, end - start)  # 최소 0.1초
+                
+                img_array = np.array(img)
+                clip = ImageClip(img_array).with_duration(dur)
+                clip = clip.with_start(start)
+                clips.append(clip)
+                print(f"      이미지 {i+1}: {start:.1f}s ~ {end:.1f}s ({dur:.1f}s)")
+        else:
+            # 균등 분배 (폴백)
+            time_per_image = duration / len(images)
+            for i, img in enumerate(images):
+                img_array = np.array(img)
+                clip = ImageClip(img_array).with_duration(time_per_image)
+                clip = clip.with_start(i * time_per_image)
+                clips.append(clip)
         
         return CompositeVideoClip(clips, size=(self.width, self.height)).with_fps(self.fps)
     
-    def _create_subtitle_image(self, text, font_size=80):
-        """PIL로 자막 이미지 생성 (한글 지원, 단어 단위 줄바꿈)"""
+    def _create_subtitle_image(self, text, font_size=80, text_color=(255, 255, 255, 255), is_bold=False):
+        """PIL로 자막 이미지 생성 (한글 지원, 단어 단위 줄바꿈, 색상/볼드 지원)"""
         # 일단 임시 이미지로 텍스트 크기 측정
         temp_img = Image.new('RGBA', (self.width, 400), (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp_img)
@@ -685,8 +727,12 @@ class VideoGenerator:
                     if dx != 0 or dy != 0:
                         draw.text((x + dx, y_offset + dy), line, font=font, fill=(0, 0, 0, 255))
             
-            # 흰색 본문
-            draw.text((x, y_offset), line, font=font, fill=(255, 255, 255, 255))
+            # 본문 텍스트 (지정 색상)
+            draw.text((x, y_offset), line, font=font, fill=text_color)
+            if is_bold:
+                # Faux-bold: 1px, 2px 오프셋으로 중복 그리기
+                draw.text((x + 1, y_offset), line, font=font, fill=text_color)
+                draw.text((x + 2, y_offset), line, font=font, fill=text_color)
             y_offset += line_height
         
         return np.array(img)
@@ -716,8 +762,24 @@ class VideoGenerator:
                     # 쉼표나 조사 위치에서 분리하여 별도 표시
                     pass  # 한 자막으로 표시하되 줄바꿈 처리
                 
+                # 문장 유형에 따라 색상/볼드 결정
+                RED = (255, 0, 0, 255)
+                WHITE = (255, 255, 255, 255)
+                tc = WHITE
+                bold = False
+                
+                if i == 0:  # 인트로 (첫 문장)
+                    tc = RED
+                elif re.search(r'\d+가지', text):  # N가지
+                    tc = RED
+                    bold = True
+                elif re.match(r'^(첫째|둘째|셋째)', text):  # 순서 문장
+                    tc = RED
+                elif i == len(sentence_timings) - 1:  # 아웃트로 (마지막)
+                    tc = RED
+                
                 # PIL로 자막 이미지 생성
-                subtitle_img = self._create_subtitle_image(text)
+                subtitle_img = self._create_subtitle_image(text, text_color=tc, is_bold=bold)
                 
                 # ImageClip으로 변환
                 clip = ImageClip(subtitle_img)
@@ -889,8 +951,123 @@ class VideoGenerator:
         print(f"✅ 썸네일 생성: {output_path}")
         return output_path
     
+    def get_thumbnail_path(self):
+        """마지막 create_video 호출 시 생성된 썸네일 경로 반환"""
+        return getattr(self, '_thumbnail_path', None)
+
+    def _create_hook_thumbnail(self, pil_image, hook_text, output_path):
+        """인트로 배경 이미지 + 후킹 문장 오버레이로 썸네일 생성 (쇼츠 9:16)"""
+        try:
+            bg = pil_image.copy().convert('RGB')
+            draw = ImageDraw.Draw(bg)
+
+            font_size = 72
+            font = None
+            try:
+                if self.font_path:
+                    font = ImageFont.truetype(self.font_path, font_size)
+            except:
+                pass
+            if not font:
+                font = ImageFont.load_default()
+
+            # 단어 단위 줄바꿈
+            max_width = self.width - 150
+            lines = []
+            current_line = ""
+            for word in hook_text.split(' '):
+                test_line = current_line + (' ' if current_line else '') + word
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                if bbox[2] - bbox[0] <= max_width:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+            if current_line:
+                lines.append(current_line)
+
+            line_height = font_size + 25
+            total_text_h = len(lines) * line_height
+            y_start = int(self.height * 0.25)  # 상단 1/4 지점 (자막 위치)
+
+            # 반투명 배경 박스
+            pad = 25
+            overlay = Image.new('RGBA', (self.width, self.height), (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw.rectangle(
+                [(40, y_start - pad), (self.width - 40, y_start + total_text_h + pad)],
+                fill=(0, 0, 0, 180)
+            )
+            bg = Image.alpha_composite(bg.convert('RGBA'), overlay).convert('RGB')
+            draw = ImageDraw.Draw(bg)
+
+            RED = (255, 0, 0)
+            for idx, line in enumerate(lines):
+                bbox = draw.textbbox((0, 0), line, font=font)
+                tw = bbox[2] - bbox[0]
+                x = (self.width - tw) // 2
+                y = y_start + idx * line_height
+
+                for ox, oy in [(4, 4), (3, 3), (2, 2)]:
+                    draw.text((x + ox, y + oy), line, font=font, fill=(0, 0, 0))
+                for dx in [-3, -2, -1, 0, 1, 2, 3]:
+                    for dy in [-3, -2, -1, 0, 1, 2, 3]:
+                        if dx != 0 or dy != 0:
+                            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0))
+                draw.text((x, y), line, font=font, fill=RED)
+                draw.text((x + 1, y), line, font=font, fill=RED)
+                draw.text((x + 2, y), line, font=font, fill=RED)
+
+            bg.save(output_path, 'JPEG', quality=95)
+            print(f"   ✅ 쇼츠 후킹 썸네일 생성: {output_path}")
+            return output_path
+        except Exception as e:
+            print(f"   ⚠️ 썸네일 생성 실패: {e}")
+            return None
+    
+    def _detect_section_boundaries(self, sentence_timings, duration):
+        """문장 타이밍에서 섹션 경계 시간 감지 (인트로/첫째/둘째/셋째/아웃트로)"""
+        import re
+        if not sentence_timings or len(sentence_timings) == 0:
+            return None
+        
+        # 첫째/둘째/셋째 시작 시간 찾기
+        ordinal_times = []
+        for timing in sentence_timings:
+            text = timing['text']
+            if re.match(r'^(첫째|둘째|셋째)', text):
+                ordinal_times.append(timing['start'])
+        
+        if len(ordinal_times) < 3:
+            print(f"   ⚠️  섹션 경계 부족 ({len(ordinal_times)}개 발견), 균등 분배 사용")
+            return None
+        
+        # 마지막 문장 = 아웃트로 시작
+        outro_start = sentence_timings[-1]['start']
+        
+        # 경계: [0, 첫째, 둘째, 셋째, 아웃트로, 끝]
+        boundaries = [0] + ordinal_times[:3] + [outro_start, duration]
+        
+        # 중복 제거 및 정렬
+        boundaries = sorted(list(set(boundaries)))
+        
+        if len(boundaries) != 6:
+            print(f"   ⚠️  경계 수 불일치 ({len(boundaries)}개), 균등 분배 사용")
+            return None
+        
+        print(f"   🎯 섹션 경계 감지 완료:")
+        sections = ["인트로", "첫째", "둘째", "셋째", "아웃트로"]
+        for i in range(5):
+            print(f"      {sections[i]}: {boundaries[i]:.1f}s ~ {boundaries[i+1]:.1f}s")
+        
+        return boundaries
+    
     def create_video(self, script_data, audio_path, output_path, sentence_timings=None, use_ai_background=True):
-        """최종 비디오 생성 (AI 배경 이미지 옵션)"""
+        """최종 비디오 생성 (AI 배경 이미지 옵션, 썸네일 자동 생성)"""
+        self._thumbnail_path = None  # 썸네일 경로
+        audio = None
+        final_video = None
         try:
             print("🎬 비디오 생성 중...")
             
@@ -919,11 +1096,29 @@ class VideoGenerator:
                             background_images.append(img)
                             break
             
-            # 배경 비디오 생성
-            background = self.create_background_video(background_images, duration)
+            # 섹션 경계 감지 (이미지 타이밍 동기화)
+            section_times = self._detect_section_boundaries(sentence_timings, duration) if sentence_timings else None
+            
+            # 배경 비디오 생성 (섹션 타이밍 적용)
+            background = self.create_background_video(background_images, duration, section_times=section_times)
             
             # 자막 생성 (음성 타이밍 기반)
             subtitle_clips = self.create_subtitle_clips(script_data['script'], duration, sentence_timings=sentence_timings)
+            
+            # 썸네일 생성: 인트로 배경 + 후킹 문장 (N가지) 오버레이
+            if sentence_timings and background_images:
+                import re
+                hook_text = None
+                for timing in sentence_timings:
+                    if re.search(r'\d+가지', timing['text']):
+                        hook_text = timing['text']
+                        break
+                if hook_text and len(background_images) > 0:
+                    thumb_path = output_path.replace('.mp4', '_thumb.jpg')
+                    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+                    self._thumbnail_path = self._create_hook_thumbnail(
+                        background_images[0], hook_text, thumb_path
+                    )
             
             # 모든 클립 합성
             final_video = CompositeVideoClip(
@@ -972,6 +1167,18 @@ class VideoGenerator:
             import traceback
             traceback.print_exc()
             return None
+        finally:
+            # 리소스 정리
+            if final_video:
+                try:
+                    final_video.close()
+                except Exception:
+                    pass
+            if audio:
+                try:
+                    audio.close()
+                except Exception:
+                    pass
 
 
 if __name__ == "__main__":

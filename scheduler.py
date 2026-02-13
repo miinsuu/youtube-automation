@@ -29,21 +29,25 @@ class YouTubeScheduler:
         # 스케줄 설정
         self.schedule_config = self.config.get('scheduler', {})
         
-    def create_and_upload(self):
+    def create_and_upload(self, video_type='shorts'):
         """영상 생성 및 업로드 (플래그에 따라)"""
         now = datetime.now()
         print(f"\n{'='*60}")
-        print(f"⏰ 스케줄 실행: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"⏰ 스케줄 실행: {now.strftime('%Y-%m-%d %H:%M:%S')} (KST)")
+        print(f"🎬 타입: {video_type.upper()}")
         print(f"{'='*60}")
         
         try:
-            # 업로드 여부는 플래그로 제어
-            result = self.automation.create_video(upload=self.upload_enabled)
+            # 비디오 타입에 따라 생성
+            if video_type == 'longform':
+                result = self.automation.create_longform_video(upload=self.upload_enabled)
+            else:  # shorts
+                result = self.automation.create_video(upload=self.upload_enabled)
             
             if result:
                 print(f"✅ 작업 완료!")
                 if self.upload_enabled:
-                    print(f"📺 업로드 완료")
+                    print(f"📺 YouTube 업로드 완료")
                 else:
                     print(f"📁 비디오 저장됨: {result['video_path']}")
             else:
@@ -56,26 +60,24 @@ class YouTubeScheduler:
     
     def setup_schedule(self):
         """스케줄 설정"""
-        weekday_times = self.schedule_config.get('weekday_times', ['07:00', '12:00', '18:00', '22:00'])
-        weekend_times = self.schedule_config.get('weekend_times', ['09:00', '12:00', '15:00', '18:00', '22:00'])
+        # Config에서 매일 실행 시간 읽기
+        shorts_times = self.schedule_config.get('shorts', {}).get('daily_times', 
+            ['08:00', '12:00', '15:00', '18:00', '22:00'])
+        longform_times = self.schedule_config.get('longform', {}).get('daily_times', 
+            ['12:00', '15:00', '18:00', '22:00'])
         
         print("📅 스케줄 설정 중...")
-        print(f"   평일 (월-금): {', '.join(weekday_times)}")
-        print(f"   주말 (토-일): {', '.join(weekend_times)}")
+        print(f"\n📱 쇼츠 (매일): {', '.join(shorts_times)}")
+        print(f"📺 롱폼 (매일): {', '.join(longform_times)}")
         print(f"   업로드 활성화: {'✅ 예' if self.upload_enabled else '❌ 아니오 (테스트 모드)'}")
         
-        # 평일 스케줄 (월-금)
-        for time_str in weekday_times:
-            schedule.every().monday.at(time_str).do(self.create_and_upload)
-            schedule.every().tuesday.at(time_str).do(self.create_and_upload)
-            schedule.every().wednesday.at(time_str).do(self.create_and_upload)
-            schedule.every().thursday.at(time_str).do(self.create_and_upload)
-            schedule.every().friday.at(time_str).do(self.create_and_upload)
+        # 쇼츠 스케줄 - 매일 실행
+        for time_str in shorts_times:
+            schedule.every().day.at(time_str).do(self.create_and_upload, video_type='shorts')
         
-        # 주말 스케줄 (토-일)
-        for time_str in weekend_times:
-            schedule.every().saturday.at(time_str).do(self.create_and_upload)
-            schedule.every().sunday.at(time_str).do(self.create_and_upload)
+        # 롱폼 스케줄 - 매일 실행
+        for time_str in longform_times:
+            schedule.every().day.at(time_str).do(self.create_and_upload, video_type='longform')
         
         print(f"\n✅ 총 {len(schedule.get_jobs())}개의 스케줄이 설정되었습니다.")
         

@@ -8,7 +8,6 @@ import asyncio
 import edge_tts
 from pydub import AudioSegment
 import os
-import re
 import time
 
 

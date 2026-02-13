@@ -13,7 +13,7 @@ build/
 
 # Secrets & API Keys (절대 커밋하지 말 것!)
 config/client_secrets.json
-config/youtube_credentials.json
+config/youtube_credentials*.json
 config/config.json
 *.json.secret
 *.key
@@ -23,7 +23,14 @@ output/videos/*.mp4
 output/audio/*.mp3
 output/images/*.png
 output/images/*.jpg
+output/longform_videos/*.mp4
+output/longform_audio/*.mp3
+output/longform_images/*.png
+output/longform_images/*.jpg
+output/thumbnails/*.jpg
+output/thumbnails/*.png
 output/*.json
+output/.DS_Store
 
 # Logs
 logs/*.log
