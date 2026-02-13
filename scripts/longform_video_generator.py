@@ -65,6 +65,9 @@ class LongformVideoGenerator:
         self.hf_token = self.config.get('huggingface_token', '')
         self.hf_model_url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
 
+        # Together AI API (2순위 폴백)
+        self.together_api_key = self.config.get('together_api_key', '')
+
         # 한글 폰트 찾기
         self.font_path = self._find_korean_font()
 
@@ -175,20 +178,27 @@ class LongformVideoGenerator:
         for i in range(num_images):
             img_path = None
 
+            # AI 프롬프트 생성 (HF, Together AI 공통 사용)
+            prompt = self._build_illustration_prompt(
+                scene_texts[i] if i < len(scene_texts) else "",
+                used_prompts=used_prompts
+            )
+
             # 1순위: HuggingFace AI 일러스트
             if self.hf_token:
-                prompt = self._build_illustration_prompt(
-                    scene_texts[i] if i < len(scene_texts) else "",
-                    used_prompts=used_prompts
-                )
                 img_path = self._generate_ai_illustration(prompt, i + 1)
 
-            # 2순위: Pexels 사진
+            # 2순위: Together AI 폴백
+            if not img_path and self.together_api_key:
+                print(f"  [{i+1}] Together AI 폴백...")
+                img_path = self._generate_ai_image_together(prompt, i + 1)
+
+            # 3순위: Pexels 사진
             if not img_path:
                 keyword = self.IMAGE_KEYWORDS[i % len(self.IMAGE_KEYWORDS)]
                 img_path = self._download_pexel_image(keyword, i + 1)
 
-            # 3순위: 그라디언트 배경
+            # 4순위: 그라디언트 배경
             if not img_path:
                 img_path = self._create_gradient_background(i)
 
@@ -520,8 +530,61 @@ class LongformVideoGenerator:
             return None
 
         except Exception as e:
-            print(f"  ⚠️ [{index}] AI 생성 에러: {e} → Pexels 폴백")
+            print(f"  ⚠️ [{index}] AI 생성 에러: {e} → 폴백")
             return None
+
+    def _generate_ai_image_together(self, prompt, index, retry_count=2):
+        """Together AI FLUX.1-schnell로 이미지 생성 (16:9 가로)"""
+        if not self.together_api_key:
+            return None
+
+        url = "https://api.together.xyz/v1/images/generations"
+        headers = {
+            "Authorization": f"Bearer {self.together_api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": "black-forest-labs/FLUX.1-schnell-Free",
+            "prompt": prompt,
+            "width": 1344,
+            "height": 768,
+            "n": 1,
+        }
+
+        for attempt in range(retry_count):
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=60)
+                if resp.status_code == 200:
+                    import base64
+                    from io import BytesIO
+                    data = resp.json()
+                    img_data = data.get('data', [{}])[0]
+                    if 'b64_json' in img_data:
+                        img_bytes = base64.b64decode(img_data['b64_json'])
+                        img = Image.open(BytesIO(img_bytes))
+                    elif 'url' in img_data:
+                        img_resp = requests.get(img_data['url'], timeout=30)
+                        if img_resp.status_code == 200:
+                            img = Image.open(BytesIO(img_resp.content))
+                        else:
+                            continue
+                    else:
+                        continue
+
+                    # Center crop으로 비율 유지하며 리사이즈
+                    img_cropped = self._center_crop_resize(img)
+                    output_path = f"output/longform_images/bg_together_{index}_{int(time.time())}.jpg"
+                    img_cropped.save(output_path, "JPEG", quality=90)
+
+                    fsize = os.path.getsize(output_path) // 1024
+                    print(f"  ✓ [{index}] Together AI 성공 ({fsize}KB)")
+                    return output_path
+                print(f"  ⚠️ [{index}] Together 응답 {resp.status_code}, 재시도 {attempt+1}/{retry_count}")
+                time.sleep(3)
+            except Exception as e:
+                print(f"  ⚠️ [{index}] Together 오류: {str(e)[:80]}, 재시도 {attempt+1}/{retry_count}")
+                time.sleep(3)
+        return None
 
     # ─────────────────────────────────────────────
     #  배경 이미지 관련 (Pexels 폴백)
