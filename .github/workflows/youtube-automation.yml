@@ -116,6 +116,10 @@ jobs:
           together_key = '${{ secrets.TOGETHER_API_KEY }}'
           if together_key:
               config['together_api_key'] = together_key
+          # Pexels API 키
+          pexels_key = '${{ secrets.PEXELS_API_KEY }}'
+          if pexels_key:
+              config['pexels_api_key'] = pexels_key
           upload_flag = '${{ env.UPLOAD_ENABLED }}'
           config['scheduler']['upload_enabled'] = (upload_flag == 'true')
           with open('config/config.json', 'w') as f:
