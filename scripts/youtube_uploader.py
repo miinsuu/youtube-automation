@@ -103,7 +103,31 @@ class YouTubeUploader:
                 }
             return None
         except Exception as e:
-            print(f"❌ 현재 채널 조회 오류: {e}")
+            err_msg = str(e).lower()
+            # SSL/연결 오류 시 API 클라이언트 재생성 후 재시도
+            if 'eof' in err_msg or 'ssl' in err_msg or 'connection' in err_msg or 'broken pipe' in err_msg:
+                print(f"⚠️ 연결 만료 감지: {e}")
+                print("🔄 API 클라이언트 재생성 중...")
+                self.youtube = None
+                if self.authenticate():
+                    try:
+                        request = self.youtube.channels().list(
+                            part='snippet,contentDetails',
+                            mine=True
+                        )
+                        response = request.execute()
+                        if response.get('items'):
+                            channel = response['items'][0]
+                            print("✅ 재연결 성공!")
+                            return {
+                                'id': channel['id'],
+                                'title': channel['snippet']['title'],
+                                'description': channel['snippet'].get('description', '')
+                            }
+                    except Exception as e2:
+                        print(f"❌ 재연결 후에도 채널 조회 실패: {e2}")
+            else:
+                print(f"❌ 현재 채널 조회 오류: {e}")
             return None
     
     def get_my_channels(self):
