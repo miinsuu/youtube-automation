@@ -227,7 +227,8 @@ class LongformVideoGenerator:
             WHITE = (255, 255, 255, 255)
 
             # 인트로/아웃트로 경계 감지
-            # 첫 문장 = 인사말 (RED), 두 번째 문장 = 후킹 (RED+BOLD) → 썸네일 사용
+            # 첫 문장 = 후킹 (RED+BOLD) → 썸네일 사용
+            # 두 번째 문장도 후킹 (RED)
             # 마지막 2문장 = 아웃트로 (RED)
             total_sents = len(sentence_timings)
 
@@ -253,12 +254,12 @@ class LongformVideoGenerator:
                     # 색상/볼드 결정
                     tc = WHITE
                     bold = False
-                    if i == 0:  # 첫 문장 = 인사말 (RED)
-                        tc = RED
-                    elif i == 1:  # 두 번째 문장 = 진짜 후킹 (RED + BOLD)
+                    if i == 0:  # 첫 문장 = 후킹 (RED + BOLD)
                         tc = RED
                         bold = True
                         hook_text = text
+                    elif i == 1:  # 두 번째 문장 = 후킹 연장 (RED)
+                        tc = RED
                     elif i >= total_sents - 2:  # 마지막 2문장 = 아웃트로 RED
                         tc = RED
 
@@ -281,11 +282,19 @@ class LongformVideoGenerator:
 
             print(f"  ✓ 자막 {success_count}/{len(sentence_timings)}개 생성 완료")
 
-            # 썸네일 생성: 첫 배경 이미지 + 후킹 문장 오버레이
-            if hook_text and first_bg_path:
+            # 썸네일 생성: 영상 제목 기반 AI 배경 + 제목 오버레이
+            title_for_thumb = title if title else hook_text
+            if title_for_thumb:
                 thumb_path = f"output/thumbnails/longform_thumb_{int(time.time())}.jpg"
                 os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
-                self._thumbnail_path = self._create_hook_thumbnail(first_bg_path, hook_text, thumb_path)
+                # 썸네일용 AI 배경 이미지 생성 (제목과 어울리는)
+                thumb_bg = self._generate_thumbnail_background(title_for_thumb)
+                if not thumb_bg and first_bg_path:
+                    thumb_bg = first_bg_path
+                if thumb_bg:
+                    self._thumbnail_path = self._create_hook_thumbnail(
+                        thumb_bg, title_for_thumb, thumb_path
+                    )
         else:
             print("⚠️ sentence_timings 없음 → 자막 생략")
 
@@ -543,11 +552,14 @@ class LongformVideoGenerator:
             "Authorization": f"Bearer {self.together_api_key}",
             "Content-Type": "application/json",
         }
+        # 프롬프트 길이 제한 (API 제한 방지)
+        trimmed_prompt = prompt[:500] if len(prompt) > 500 else prompt
         payload = {
-            "model": "black-forest-labs/FLUX.1-schnell-Free",
-            "prompt": prompt,
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "prompt": trimmed_prompt,
             "width": 1344,
             "height": 768,
+            "steps": 4,
             "n": 1,
         }
 
@@ -579,7 +591,12 @@ class LongformVideoGenerator:
                     fsize = os.path.getsize(output_path) // 1024
                     print(f"  ✓ [{index}] Together AI 성공 ({fsize}KB)")
                     return output_path
-                print(f"  ⚠️ [{index}] Together 응답 {resp.status_code}, 재시도 {attempt+1}/{retry_count}")
+                # 에러 응답 본문 로깅
+                try:
+                    err_body = resp.text[:200]
+                except Exception:
+                    err_body = ''
+                print(f"  ⚠️ [{index}] Together 응답 {resp.status_code}: {err_body}, 재시도 {attempt+1}/{retry_count}")
                 time.sleep(3)
             except Exception as e:
                 print(f"  ⚠️ [{index}] Together 오류: {str(e)[:80]}, 재시도 {attempt+1}/{retry_count}")
@@ -780,17 +797,24 @@ class LongformVideoGenerator:
         return np.array(img)
 
     def _create_hook_thumbnail(self, bg_image_path, hook_text, output_path):
-        """배경 이미지 + 후킹 문장 오버레이로 썸네일 생성"""
+        """배경 이미지 + 영상 제목 오버레이로 썸네일 생성 (큰 빨간 볼드)"""
         try:
             bg = Image.open(bg_image_path).convert('RGB')
             bg = bg.resize((self.width, self.height), Image.LANCZOS)
+
+            # 배경 어둡게 (텍스트 가독성 향상)
+            from PIL import ImageEnhance
+            enhancer = ImageEnhance.Brightness(bg)
+            bg = enhancer.enhance(0.6)
+
             draw = ImageDraw.Draw(bg)
 
-            font_size = 72
+            # 큰 폰트 (작은 썸네일에서도 잘 보이도록)
+            font_size = 100
             font = self._load_font(font_size)
 
-            # 단어 단위 줄바꿈
-            max_width = self.width - 200
+            # 단어 단위 줄바꿈 (여백 충분히)
+            max_width = self.width - 300
             lines = []
             current_line = ""
             for word in hook_text.split(' '):
@@ -805,24 +829,28 @@ class LongformVideoGenerator:
             if current_line:
                 lines.append(current_line)
 
-            line_height = font_size + 25
+            # 최대 4줄로 제한
+            if len(lines) > 4:
+                lines = lines[:4]
+
+            line_height = font_size + 30
             total_text_h = len(lines) * line_height
             y_start = (self.height - total_text_h) // 2
 
-            # 반투명 배경 박스
-            pad = 30
+            # 반투명 배경 박스 (그라데이션 느낌)
+            pad = 50
             box_top = y_start - pad
             box_bottom = y_start + total_text_h + pad
             overlay = Image.new('RGBA', (self.width, self.height), (0, 0, 0, 0))
             overlay_draw = ImageDraw.Draw(overlay)
             overlay_draw.rectangle(
-                [(80, box_top), (self.width - 80, box_bottom)],
-                fill=(0, 0, 0, 160)
+                [(60, box_top), (self.width - 60, box_bottom)],
+                fill=(0, 0, 0, 180)
             )
             bg = Image.alpha_composite(bg.convert('RGBA'), overlay).convert('RGB')
             draw = ImageDraw.Draw(bg)
 
-            # 후킹 문장 그리기 (#FF0000 + 볼드)
+            # 제목 그리기 (#FF0000 + 두꺼운 볼드)
             RED = (255, 0, 0)
             for idx, line in enumerate(lines):
                 bbox = draw.textbbox((0, 0), line, font=font)
@@ -830,17 +858,15 @@ class LongformVideoGenerator:
                 x = (self.width - tw) // 2
                 y = y_start + idx * line_height
 
-                # 그림자 + 외곽선
-                for ox, oy in [(4, 4), (3, 3), (2, 2)]:
-                    draw.text((x + ox, y + oy), line, font=font, fill=(0, 0, 0))
-                for dx in [-3, -2, -1, 0, 1, 2, 3]:
-                    for dy in [-3, -2, -1, 0, 1, 2, 3]:
+                # 두꺼운 외곽선 (가독성)
+                for dx in range(-4, 5):
+                    for dy in range(-4, 5):
                         if dx != 0 or dy != 0:
                             draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0))
-                # 빨간 본문 + 볼드
-                draw.text((x, y), line, font=font, fill=RED)
-                draw.text((x + 1, y), line, font=font, fill=RED)
-                draw.text((x + 2, y), line, font=font, fill=RED)
+                # 빨간 본문 + 굵은 볼드 (여러 번 겹쳐 그리기)
+                for bx in range(-2, 3):
+                    for by in range(-1, 2):
+                        draw.text((x + bx, y + by), line, font=font, fill=RED)
 
             bg.save(output_path, 'JPEG', quality=95)
             print(f"  ✅ 후킹 썸네일 생성: {output_path}")
@@ -848,6 +874,29 @@ class LongformVideoGenerator:
         except Exception as e:
             print(f"  ⚠️ 썸네일 생성 실패: {e}")
             return None
+
+    def _generate_thumbnail_background(self, title):
+        """영상 제목에 어울리는 AI 배경 이미지 생성 (썸네일용)"""
+        prompt = self._build_illustration_prompt(title)
+        # "no text" 강조
+        prompt = prompt.replace("no text", "absolutely no text, no words, no letters, no writing")
+
+        # 1순위: Together AI (유료, 빠름)
+        if self.together_api_key:
+            result = self._generate_ai_image_together(prompt, 0)
+            if result:
+                print(f"  🖼️ 썸네일 배경: Together AI 생성")
+                return result
+
+        # 2순위: HuggingFace
+        if self.hf_token:
+            result = self._generate_ai_illustration(prompt, 0)
+            if result:
+                print(f"  🖼️ 썸네일 배경: HuggingFace 생성")
+                return result
+
+        print(f"  ⚠️ 썸네일 AI 배경 생성 실패 → 첫 번째 배경 이미지 사용")
+        return None
 
     # ─────────────────────────────────────────────
     #  유틸리티

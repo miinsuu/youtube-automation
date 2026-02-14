@@ -92,11 +92,14 @@ class VideoGenerator:
             "Authorization": f"Bearer {self.together_api_key}",
             "Content-Type": "application/json",
         }
+        # 프롬프트 길이 제한 (API 제한 방지)
+        trimmed_prompt = prompt[:500] if len(prompt) > 500 else prompt
         payload = {
-            "model": "black-forest-labs/FLUX.1-schnell-Free",
-            "prompt": prompt,
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "prompt": trimmed_prompt,
             "width": 768,
             "height": 1344,
+            "steps": 4,
             "n": 1,
         }
 
@@ -116,7 +119,7 @@ class VideoGenerator:
                         if img_resp.status_code == 200:
                             img = Image.open(io.BytesIO(img_resp.content))
                             return img
-                print(f"   ⚠️ Together 응답 코드 {resp.status_code}, 재시도 {attempt+1}/{retry_count}")
+                print(f"   ⚠️ Together 응답 코드 {resp.status_code}: {resp.text[:200]}, 재시도 {attempt+1}/{retry_count}")
                 time.sleep(3)
             except Exception as e:
                 print(f"   ⚠️ Together 오류: {str(e)[:80]}, 재시도 {attempt+1}/{retry_count}")
