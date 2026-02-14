@@ -96,39 +96,25 @@ jobs:
         run: |
           mkdir -p config
           
-          # 템플릿에서 config.json 생성 (topics, 설정값 포함)
-          cp config/config.json.template config/config.json
-          
+          # YouTube OAuth 인증 파일 생성 (GitHub Secrets에서)
           echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > config/client_secrets.json
           
           # 채널 ID에 맞는 인증 파일명 생성 (YouTubeUploader의 네이밍 규칙 일치)
           echo '${{ secrets.YOUTUBE_CREDENTIALS }}' > config/youtube_credentials.json
           echo '${{ secrets.YOUTUBE_CREDENTIALS }}' > config/youtube_credentials_L4y1Qbdg.json
           
-          # Update config with API keys
+          # config.json에 API 키 주입 (Secrets → config.json)
           python -c "
           import json
           with open('config/config.json', 'r') as f:
               config = json.load(f)
-          gemini_key = '${{ secrets.GEMINI_API_KEY }}'
-          if gemini_key:
-              config['gemini_api_key'] = gemini_key
-          # HuggingFace 토큰 (시크릿이 있으면 사용, 없으면 config.json 값 유지)
-          hf_token = '${{ secrets.HUGGINGFACE_TOKEN }}'
-          if hf_token:
-              config['huggingface_token'] = hf_token
-          # Together AI API 키
-          together_key = '${{ secrets.TOGETHER_API_KEY }}'
-          if together_key:
-              config['together_api_key'] = together_key
-          # Pexels API 키
-          pexels_key = '${{ secrets.PEXELS_API_KEY }}'
-          if pexels_key:
-              config['pexels_api_key'] = pexels_key
-          upload_flag = '${{ env.UPLOAD_ENABLED }}'
-          config['scheduler']['upload_enabled'] = (upload_flag == 'true')
+          config['gemini_api_key'] = '${{ secrets.GEMINI_API_KEY }}'
+          config['huggingface_token'] = '${{ secrets.HUGGINGFACE_TOKEN }}'
+          config['together_api_key'] = '${{ secrets.TOGETHER_API_KEY }}'
+          config['pexels_api_key'] = '${{ secrets.PEXELS_API_KEY }}'
+          config['scheduler']['upload_enabled'] = ('${{ env.UPLOAD_ENABLED }}' == 'true')
           with open('config/config.json', 'w') as f:
-              json.dump(config, f, indent=2)
+              json.dump(config, f, indent=2, ensure_ascii=False)
           "
       
       - name: Create video
