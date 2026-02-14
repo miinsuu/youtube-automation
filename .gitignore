@@ -50,3 +50,30 @@ check_channels.py
 monitor_workflow.py
 web_dashboard.py
 scheduler.py
+
+# 불필요한 문서 (README.md, EXAMPLES.md만 유지)
+AI_BACKGROUND_GUIDE.md
+CHANGE_DEFAULT_CHANNEL.md
+CHANNEL_ID_GUIDE.md
+DEPLOYMENT_CHECKLIST.md
+DEPLOYMENT_READY.md
+FINAL_REPORT.md
+FINAL_SCHEDULE_SIMPLE.md
+FIX_*.md
+GITHUB_*.md
+GROQ_SETUP.md
+ISSUES_RESOLVED.md
+LONGFORM_*.md
+MOBILE_CONTROL_SETUP.md
+MULTI_CHANNEL_UPLOAD.md
+PYTHON_*.md
+QUICK_START_MOBILE.md
+SCHEDULE_*.md
+SCHEDULING_TEST.md
+SETUP_GUIDE.md
+WEB_DASHBOARD_GUIDE.md
+YOUTUBE_CHANNEL_ID_SETUP.md
+
+# 불필요한 HTML 템플릿
+templates/dashboard.html
+templates/mobile-control.html

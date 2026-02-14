@@ -95,6 +95,10 @@ jobs:
       - name: Setup credentials
         run: |
           mkdir -p config
+          
+          # 템플릿에서 config.json 생성 (topics, 설정값 포함)
+          cp config/config.json.template config/config.json
+          
           echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > config/client_secrets.json
           
           # 채널 ID에 맞는 인증 파일명 생성 (YouTubeUploader의 네이밍 규칙 일치)
