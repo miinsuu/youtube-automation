@@ -222,18 +222,52 @@ class YouTubeUploader:
             else:
                 tags = default_tags
 
-            # 설명란 강화
+            # 제목에 해시태그 추가 (#shorts 필수 포함, 최대 5개)
+            title_hashtags = ['#shorts']
+            hashtag_source = metadata.get('hashtags', []) if metadata else []
+            if isinstance(hashtag_source, str):
+                import re as _re
+                hashtag_source = _re.findall(r'#\S+', hashtag_source)
+            # 태그에서 해시태그 보충
+            for t in tags:
+                ht = f'#{t}' if not t.startswith('#') else t
+                if ht not in title_hashtags and ht != '#shorts':
+                    title_hashtags.append(ht)
+                if len(title_hashtags) >= 5:
+                    break
+            # hashtag_source에서 추가 보충
+            for ht in hashtag_source:
+                if ht not in title_hashtags:
+                    title_hashtags.append(ht)
+                if len(title_hashtags) >= 5:
+                    break
+            title_hashtag_str = ' '.join(title_hashtags[:5])
+
+            # 설명글 강화
             if not description or len(description) < 50:
                 description = f"{title}\n\n📌 추천 정보를 제공하는 채널입니다.\n❤️ 공감하셨다면 좋아요와 구독을 눌러주세요! 🙏"
 
-            # 해시태그는 설명에 이미 포함되어 있지 않다면 추가
-            if '#' not in description:
-                hashtags = " ".join([f"#{tag}" for tag in tags[:5]])
-                description += f"\n\n{hashtags}"
+            # 설명글 하단에 해시태그 추가 (기존 해시태그 제거 후 재추가)
+            import re as _re
+            description = _re.sub(r'\n*#\S+(\s+#\S+)*\s*$', '', description).rstrip()
+            desc_hashtags = ['#shorts']
+            for t in tags:
+                ht = f'#{t}' if not t.startswith('#') else t
+                if ht not in desc_hashtags:
+                    desc_hashtags.append(ht)
+                if len(desc_hashtags) >= 10:
+                    break
+            description += f"\n\n{' '.join(desc_hashtags)}"
 
-            # 제목 길이 제한 (YouTube 100자)
-            if len(title) > 95:
-                title = title[:92] + "..."
+            # 제목에 해시태그 붙이기 (총 100자 제한 고려)
+            title_with_tags = f"{title} {title_hashtag_str}"
+            if len(title_with_tags) > 100:
+                # 해시태그 수 줄이기
+                while len(title_with_tags) > 100 and len(title_hashtags) > 1:
+                    title_hashtags.pop()
+                    title_hashtag_str = ' '.join(title_hashtags)
+                    title_with_tags = f"{title} {title_hashtag_str}"
+            title = title_with_tags
 
             body = {
                 'snippet': {

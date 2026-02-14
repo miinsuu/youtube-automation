@@ -725,14 +725,14 @@ class LongformVideoGenerator:
             font = ImageFont.load_default()
         return font
 
-    def _create_subtitle_image(self, text, font_size=48, text_color=(255, 255, 255, 255), is_bold=False):
+    def _create_subtitle_image(self, text, font_size=72, text_color=(255, 255, 255, 255), is_bold=False):
         """PIL로 자막 이미지 생성 (한글 지원, 색상/볼드)"""
-        temp_img = Image.new('RGBA', (self.width, 300), (0, 0, 0, 0))
+        temp_img = Image.new('RGBA', (self.width, 400), (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp_img)
         font = self._load_font(font_size)
 
-        # 단어 단위 줄바꿈
-        max_width = self.width - 200
+        # 단어 단위 줄바꾼
+        max_width = self.width - 250
         lines = []
         current_line = ""
         words = text.split(' ')
@@ -752,10 +752,10 @@ class LongformVideoGenerator:
         if current_line:
             lines.append(current_line)
 
-        line_height = font_size + 20
-        padding = 15
+        line_height = font_size + 25
+        padding = 20
         text_bg_height = len(lines) * line_height + (padding * 2)
-        img_height = text_bg_height + 30
+        img_height = text_bg_height + 40
 
         img = Image.new('RGBA', (self.width, img_height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
