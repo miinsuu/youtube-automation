@@ -7,6 +7,7 @@ import json
 import random
 import sys
 import re
+import time
 from datetime import datetime
 
 try:
@@ -51,9 +52,22 @@ class LongformScriptGenerator:
                 print("❌ Gemini 모델이 초기화되지 않았습니다. API 키를 확인해주세요.")
                 return None
             
-            # Gemini API 호출
-            response = self.model.generate_content(prompt)
-            script_text = response.text
+            # Gemini API 호출 (재시도 포함)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = self.model.generate_content(prompt)
+                    script_text = response.text
+                    break
+                except Exception as e:
+                    err_msg = str(e)
+                    if attempt < max_retries - 1 and ('500' in err_msg or 'internal' in err_msg.lower() or 'unavailable' in err_msg.lower()):
+                        wait = (attempt + 1) * 5
+                        print(f"⚠️ Gemini API 오류 (시도 {attempt+1}/{max_retries}): {err_msg[:100]}")
+                        print(f"🔄 {wait}초 후 재시도...")
+                        time.sleep(wait)
+                    else:
+                        raise
             
             # 스크립트 파싱
             title, detailed_script = self._parse_script(script_text, topic)
@@ -246,12 +260,22 @@ YouTube 롱폼 비디오(10-15분, 약 2000-2500단어)를 위한 깊이 있는 
 
 주의: 마크다운 문법(**, *, ##, [] 등)을 절대 사용하지 마세요. 순수 텍스트 + 이모지만 사용하세요."""
 
-        try:
-            response = self.model.generate_content(prompt)
-            return self._parse_metadata(response.text, script_data)
-        except Exception as e:
-            print(f"⚠️ 메타데이터 생성 실패: {e} — 기본값 사용")
-            return self._fallback_metadata(script_data)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.model.generate_content(prompt)
+                return self._parse_metadata(response.text, script_data)
+            except Exception as e:
+                err_msg = str(e)
+                if attempt < max_retries - 1 and ('500' in err_msg or 'internal' in err_msg.lower() or 'unavailable' in err_msg.lower()):
+                    wait = (attempt + 1) * 5
+                    print(f"⚠️ Gemini API 오류 (시도 {attempt+1}/{max_retries}): {err_msg[:100]}")
+                    print(f"🔄 {wait}초 후 재시도...")
+                    time.sleep(wait)
+                else:
+                    print(f"⚠️ 메타데이터 생성 실패: {e} — 기본값 사용")
+                    return self._fallback_metadata(script_data)
+        return self._fallback_metadata(script_data)
 
     def _parse_metadata(self, text, script_data):
         """Gemini 응답에서 메타데이터 파싱 + 마크다운 필터링"""

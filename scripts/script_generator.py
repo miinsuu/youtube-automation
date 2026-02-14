@@ -110,17 +110,28 @@ class ScriptGenerator:
 
         prompt = self._build_prompt(topic)
 
-        try:
-            response = self.model.generate_content(prompt)
-            raw = response.text.strip()
-            result = self._parse_response(raw, topic)
-            if result:
-                print(f"✅ 쇼츠 데이터 생성 완료: {result.get('title', 'N/A')}")
-            return result
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.model.generate_content(prompt)
+                raw = response.text.strip()
+                result = self._parse_response(raw, topic)
+                if result:
+                    print(f"✅ 쇼츠 데이터 생성 완료: {result.get('title', 'N/A')}")
+                return result
 
-        except Exception as e:
-            print(f"❌ 스크립트 생성 실패: {str(e)[:150]}")
-            return None
+            except Exception as e:
+                err_msg = str(e)
+                if attempt < max_retries - 1 and ('500' in err_msg or 'internal' in err_msg.lower() or 'unavailable' in err_msg.lower()):
+                    import time
+                    wait = (attempt + 1) * 5
+                    print(f"⚠️ Gemini API 오류 (시도 {attempt+1}/{max_retries}): {err_msg[:100]}")
+                    print(f"🔄 {wait}초 후 재시도...")
+                    time.sleep(wait)
+                else:
+                    print(f"❌ 스크립트 생성 실패: {str(e)[:150]}")
+                    return None
+        return None
 
     # ──────────────────────────────────────────────────
     # Gemini 프롬프트 빌드
