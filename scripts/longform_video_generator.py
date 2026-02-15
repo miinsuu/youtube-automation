@@ -134,7 +134,8 @@ class LongformVideoGenerator:
                 video_output_path,
                 fps=self.fps,
                 codec='libx264',
-                audio_codec='aac'
+                audio_codec='aac',
+                audio_fps=48000
             )
 
             print(f"✅ 비디오 생성 완료: {video_output_path}")

@@ -108,6 +108,18 @@ class TTSGenerator:
                 audio = AudioSegment.from_mp3(output_path)
                 duration = len(audio) / 1000.0  # 초 단위
                 
+                # 타이밍 보정: Edge TTS SentenceBoundary 오프셋이 실제 오디오 길이와
+                # 미세하게 어긋나는 문제 보정 (긴 텍스트일수록 누적 오차 커짐)
+                if sentence_timings and duration > 0:
+                    last_end = max(t['end'] for t in sentence_timings)
+                    if last_end > 0 and abs(last_end - duration) > 0.1:
+                        scale = duration / last_end
+                        for t in sentence_timings:
+                            t['start'] *= scale
+                            t['end'] *= scale
+                            t['duration'] = t['end'] - t['start']
+                        print(f"   ⏱️ 타이밍 보정 적용: scale={scale:.4f} (오차 {last_end - duration:.2f}초)")
+                
                 print(f"✅ TTS 생성 완료: {output_path}")
                 print(f"   음성 길이: {duration:.1f}초")
                 print(f"   문장 타이밍: {len(sentence_timings)}개")
