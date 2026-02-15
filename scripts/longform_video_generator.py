@@ -263,16 +263,31 @@ class LongformVideoGenerator:
                     elif i >= total_sents - 2:  # 마지막 2문장 = 아웃트로 RED
                         tc = RED
 
-                    # PIL로 자막 이미지 생성
-                    subtitle_img = self._create_subtitle_image(
-                        text[:80], text_color=tc, is_bold=bold
-                    )
+                    # 텍스트를 최대 2줄 단위 청크로 분할
+                    chunks = self._split_text_to_subtitle_chunks(text)
+                    num_chunks = len(chunks)
+                    total_chars = sum(len(c) for c in chunks)
 
-                    clip = ImageClip(subtitle_img)
-                    clip = clip.with_duration(duration)
-                    clip = clip.with_start(start)
-                    clip = clip.with_position(('center', self.height - 300))
-                    text_clips.append(clip)
+                    chunk_start = start
+                    for ci, chunk in enumerate(chunks):
+                        # 글자 수 비례로 시간 분배 (싱크 유지)
+                        ratio = len(chunk) / total_chars if total_chars > 0 else 1.0 / num_chunks
+                        chunk_dur = duration * ratio
+
+                        if chunk_dur < 0.05:
+                            continue
+
+                        subtitle_img = self._create_subtitle_image(
+                            chunk, text_color=tc, is_bold=bold
+                        )
+
+                        clip = ImageClip(subtitle_img)
+                        clip = clip.with_duration(chunk_dur)
+                        clip = clip.with_start(chunk_start)
+                        clip = clip.with_position(('center', self.height - 300))
+                        text_clips.append(clip)
+                        chunk_start += chunk_dur
+
                     success_count += 1
 
                 except Exception as e:
@@ -725,13 +740,12 @@ class LongformVideoGenerator:
             font = ImageFont.load_default()
         return font
 
-    def _create_subtitle_image(self, text, font_size=72, text_color=(255, 255, 255, 255), is_bold=False):
-        """PIL로 자막 이미지 생성 (한글 지원, 색상/볼드)"""
+    def _split_text_to_subtitle_chunks(self, text, font_size=72, max_lines=2):
+        """텍스트를 최대 max_lines줄 단위 청크로 분할하여 반환"""
         temp_img = Image.new('RGBA', (self.width, 400), (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp_img)
         font = self._load_font(font_size)
 
-        # 단어 단위 줄바꾼
         max_width = self.width - 250
         lines = []
         current_line = ""
@@ -751,6 +765,47 @@ class LongformVideoGenerator:
                     current_line = ""
         if current_line:
             lines.append(current_line)
+
+        # max_lines줄 단위로 청크 분할
+        if len(lines) <= max_lines:
+            return [text]
+
+        chunks = []
+        for i in range(0, len(lines), max_lines):
+            chunk_lines = lines[i:i + max_lines]
+            chunks.append(' '.join(chunk_lines))
+        return chunks
+
+    def _create_subtitle_image(self, text, font_size=72, text_color=(255, 255, 255, 255), is_bold=False):
+        """PIL로 자막 이미지 생성 (한글 지원, 색상/볼드, 최대 2줄)"""
+        temp_img = Image.new('RGBA', (self.width, 400), (0, 0, 0, 0))
+        temp_draw = ImageDraw.Draw(temp_img)
+        font = self._load_font(font_size)
+
+        # 단어 단위 줄바꿈
+        max_width = self.width - 250
+        lines = []
+        current_line = ""
+        words = text.split(' ')
+
+        for word in words:
+            test_line = current_line + (' ' if current_line else '') + word
+            bbox = temp_draw.textbbox((0, 0), test_line, font=font)
+            if bbox[2] - bbox[0] <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    lines.append(word)
+                    current_line = ""
+        if current_line:
+            lines.append(current_line)
+
+        # 최대 2줄로 제한 (안전장치)
+        if len(lines) > 2:
+            lines = lines[:2]
 
         line_height = font_size + 25
         padding = 20
