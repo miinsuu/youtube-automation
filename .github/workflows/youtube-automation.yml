@@ -46,6 +46,8 @@ env:
 jobs:
   create-and-upload:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
       - name: Determine video type and publish time
@@ -180,8 +182,14 @@ jobs:
       - name: Persist topic history to repo
         if: always()
         run: |
+          if [ ! -f logs/topic_history.json ]; then
+            echo "topic_history.json 없음 — 커밋 건너뜀"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main || true
           git add -f logs/topic_history.json
-          git diff --staged --quiet || (git commit -m "chore: update topic history [skip ci]" && git push)
+          git diff --staged --quiet && exit 0
+          git commit -m "chore: update topic history [skip ci]"
+          git pull --rebase origin main || true
+          git push
