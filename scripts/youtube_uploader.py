@@ -204,7 +204,7 @@ class YouTubeUploader:
 
     def upload_video(self, video_path, script_data, thumbnail_path=None,
                      channel_id=None, metadata=None, add_pinned_comment=True,
-                     publish_at=''):
+                     publish_at='', longform_url=''):
         """비디오를 YouTube에 업로드
 
         Args:
@@ -212,6 +212,7 @@ class YouTubeUploader:
                       (title, description, hashtags, tags, pinned_comment)
                       None이면 script_data에서 직접 추출
             publish_at: 예약 공개 시간 (ISO 8601, 비어있으면 즉시 공개)
+            longform_url: 롱폼 영상 URL (쇼츠 설명란/고정댓글에 삽입)
         """
 
         # 채널 ID 지정된 경우 새로운 업로더 인스턴스 생성
@@ -220,7 +221,8 @@ class YouTubeUploader:
             return uploader.upload_video(video_path, script_data, thumbnail_path,
                                          metadata=metadata,
                                          add_pinned_comment=add_pinned_comment,
-                                         publish_at=publish_at)
+                                         publish_at=publish_at,
+                                         longform_url=longform_url)
 
         if not self.youtube:
             if not self.authenticate():
@@ -261,6 +263,15 @@ class YouTubeUploader:
                 description = script_data.get('description', '')
                 tags = script_data.get('tags', [])
                 pinned_text = script_data.get('pinned_comment', '')
+
+            # 롱폼 URL 연동 (쇼츠 설명란/고정댓글에 롱폼 링크 삽입)
+            if longform_url:
+                description = description.rstrip() + f"\n\n🎥 이 주제의 더 깊은 이야기 👉 {longform_url}"
+                if pinned_text:
+                    pinned_text = f"📺 풀영상 보러가기 👉 {longform_url}\n\n{pinned_text}"
+                else:
+                    pinned_text = f"📺 풀영상 보러가기 👉 {longform_url}\n\n💬 감상평을 댓글로 남겨주세요!"
+                print(f"🔗 롱폼 URL 연동: {longform_url}")
 
             # 태그: 스크립트 태그 + 기본 태그
             shorts_config = self.config.get('upload', {}).get('shorts', {})

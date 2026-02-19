@@ -37,7 +37,9 @@ class LongformScriptGenerator:
         else:
             self.model = None
         
-        self.topics = self.config.get('content', {}).get('longform', {}).get('topics', [])
+        # 쇼츠와 동일한 주제 리스트 사용 (더 engaging한 주제, 롱폼도 동일 주제로 생성)
+        self.topics = self.config.get('content', {}).get('shorts', {}).get('topics',
+            self.config.get('content', {}).get('longform', {}).get('topics', []))
         self.target_length = "10-15분"
     
     def get_trending_topic(self):

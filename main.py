@@ -60,7 +60,7 @@ class YouTubeAutomation:
         except Exception as e:
             print(f"⚠️ YouTube 채널 동기화 건너뜀: {e}")
     
-    def create_video(self, topic=None, upload=True, publish_at=''):
+    def create_video(self, topic=None, upload=True, publish_at='', longform_url=''):
         """쇼츠 영상 생성 및 업로드 (구조화 메타데이터 + 5장 AI 이미지)"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -70,7 +70,7 @@ class YouTubeAutomation:
 
         # 1. 스크립트 + 메타데이터 + 이미지 프롬프트 생성
         print("\n[1/6] 📝 스크립트 + 메타데이터 생성 중...")
-        script_data = self.script_gen.generate_script(topic)
+        script_data = self.script_gen.generate_script(topic, paired_with_longform=bool(longform_url))
         if not script_data:
             print("❌ 스크립트 생성 실패")
             return None
@@ -146,7 +146,8 @@ class YouTubeAutomation:
                 channel_id=target_channel_id,
                 metadata=script_data,
                 add_pinned_comment=True,
-                publish_at=publish_at
+                publish_at=publish_at,
+                longform_url=longform_url
             )
             if upload_result:
                 result['upload'] = upload_result
@@ -343,19 +344,34 @@ def main():
         automation.create_longform_video(topic=args.topic, upload=upload, publish_at=publish_at)
     
     elif args.type == 'both':
-        print("🎥 쇼츠와 롱폼 영상을 모두 생성합니다.\n")
+        print("🎥 쇼츠 + 롱폼 동일 주제 연동 생성\n")
         
-        # 쇼츠 생성
-        print("1️⃣  쇼츠 생성 중...")
-        automation.create_video(topic=args.topic, upload=upload, publish_at=publish_at)
+        # 1. 공유 주제 선택 (쇼츠/롱폼 동일 주제)
+        topic = args.topic or automation.script_gen.pick_topic()
+        print(f"\n🎯 공유 주제: {topic}\n")
         
-        # 잠시 대기
+        # 2. 롱폼 먼저 생성 및 업로드 (URL 확보용)
+        print("1️⃣  롱폼 비디오 생성 중...")
+        longform_result = automation.create_longform_video(
+            topic=topic, upload=upload, publish_at=publish_at
+        )
+        
+        longform_url = ''
+        if longform_result and longform_result.get('upload'):
+            longform_url = longform_result['upload']['url']
+            print(f"\n✅ 롱폼 URL 확보: {longform_url}")
+        else:
+            print("\n⚠️ 롱폼 URL 미확보 — 쇼츠 단독 모드로 진행")
+        
         import time
         time.sleep(5)
         
-        # 롱폼 생성
-        print("\n2️⃣  롱폼 비디오 생성 중...")
-        automation.create_longform_video(topic=args.topic, upload=upload, publish_at=publish_at)
+        # 3. 쇼츠 생성 (롱폼 링크 포함)
+        print("\n2️⃣  쇼츠 생성 중 (롱폼 연동)...")
+        automation.create_video(
+            topic=topic, upload=upload, publish_at=publish_at,
+            longform_url=longform_url
+        )
 
 
 if __name__ == '__main__':
