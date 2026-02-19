@@ -9,6 +9,7 @@ import sys
 import re
 import time
 from datetime import datetime
+from topic_manager import pick_unique_topic, record_topic
 
 try:
     import google.generativeai as genai
@@ -40,7 +41,8 @@ class LongformScriptGenerator:
     def generate_script(self, topic=None):
         """롱폼 스크립트 생성"""
         if not topic:
-            topic = random.choice(self.topics)
+            topic = pick_unique_topic(self.topics, 'longform')
+            print(f"📌 중복 방지 주제 선택: {topic}")
         
         print(f"\n📚 롱폼 스크립트 생성 중: {topic}")
         
@@ -85,6 +87,7 @@ class LongformScriptGenerator:
             print(f"✅ 제목: {title}")
             print(f"✅ 스토리 줄 수: {len(detailed_script.split(chr(10)))}")
             
+            record_topic('longform', topic, title)
             return script_data
         
         except Exception as e:

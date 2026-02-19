@@ -2,11 +2,12 @@ name: YouTube Shorts & Longform Auto Upload
 
 on:
   schedule:
-    # ⏰ 시간대 변환: KST - 9시간 = UTC
-    # 🎬 쇼츠: 매일 3회 / 롱폼: 매일 2회 (11:30 KST만 제외)
-    - cron: '30 2 * * *'     # 매일 02:30 UTC = 11:30 KST (쇼츠만)
-    - cron: '30 8 * * *'     # 매일 08:30 UTC = 17:30 KST (쇼츠 + 롱폼)
-    - cron: '30 12 * * *'    # 매일 12:30 UTC = 21:30 KST (쇼츠 + 롱폼)
+    # ⏰ 여유를 두고 실행 → YouTube 예약 공개(publishAt)로 정확한 시간에 공개
+    # 타겟: 12:00 KST (03:00 UTC), 18:00 KST (09:00 UTC), 22:00 KST (13:00 UTC)
+    # 쇼츠만: 2시간 여유 / 롱폼 포함: 3시간 여유
+    - cron: '0 1 * * *'      # 01:00 UTC (10:00 KST) 실행 → 12:00 KST 공개 (쇼츠만)
+    - cron: '0 6 * * *'      # 06:00 UTC (15:00 KST) 실행 → 18:00 KST 공개 (쇼츠 + 롱폼)
+    - cron: '0 10 * * *'     # 10:00 UTC (19:00 KST) 실행 → 22:00 KST 공개 (쇼츠 + 롱폼)
   
   workflow_dispatch:  # 수동 실행 가능
     inputs:
@@ -47,18 +48,52 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Determine video type
+      - name: Determine video type and publish time
         id: set-type
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # 수동 실행: 사용자 선택값 사용
+            # 수동 실행: 사용자 선택값 사용 (즉시 공개)
             echo "VIDEO_TYPE=${{ github.event.inputs.type }}" >> $GITHUB_ENV
-          elif [ "${{ github.event.schedule }}" = "30 2 * * *" ]; then
-            # 11:30 KST: 쇼츠만
+            echo "PUBLISH_AT=" >> $GITHUB_ENV
+          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+            # 타겟: 12:00 KST
             echo "VIDEO_TYPE=shorts" >> $GITHUB_ENV
-          else
-            # 17:30, 21:30 KST: 쇼츠 + 롱폼
+            PUBLISH_AT=$(python3 -c "
+          from datetime import datetime, timedelta, timezone
+          kst = timezone(timedelta(hours=9))
+          now = datetime.now(kst)
+          target = now.replace(hour=12, minute=0, second=0, microsecond=0)
+          if target <= now:
+              target += timedelta(days=1)
+          print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
+          ")
+            echo "PUBLISH_AT=$PUBLISH_AT" >> $GITHUB_ENV
+          elif [ "${{ github.event.schedule }}" = "0 6 * * *" ]; then
+            # 타겟: 18:00 KST
             echo "VIDEO_TYPE=both" >> $GITHUB_ENV
+            PUBLISH_AT=$(python3 -c "
+          from datetime import datetime, timedelta, timezone
+          kst = timezone(timedelta(hours=9))
+          now = datetime.now(kst)
+          target = now.replace(hour=18, minute=0, second=0, microsecond=0)
+          if target <= now:
+              target += timedelta(days=1)
+          print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
+          ")
+            echo "PUBLISH_AT=$PUBLISH_AT" >> $GITHUB_ENV
+          elif [ "${{ github.event.schedule }}" = "0 10 * * *" ]; then
+            # 타겟: 22:00 KST
+            echo "VIDEO_TYPE=both" >> $GITHUB_ENV
+            PUBLISH_AT=$(python3 -c "
+          from datetime import datetime, timedelta, timezone
+          kst = timezone(timedelta(hours=9))
+          now = datetime.now(kst)
+          target = now.replace(hour=22, minute=0, second=0, microsecond=0)
+          if target <= now:
+              target += timedelta(days=1)
+          print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
+          ")
+            echo "PUBLISH_AT=$PUBLISH_AT" >> $GITHUB_ENV
           fi
 
       - name: Checkout repository
@@ -117,10 +152,22 @@ jobs:
               json.dump(config, f, indent=2, ensure_ascii=False)
           "
       
+      - name: Restore topic history
+        uses: actions/cache/restore@v4
+        with:
+          path: logs/topic_history.json
+          key: topic-history-
+          restore-keys: |
+            topic-history-
+
       - name: Create video
         run: |
+          PUBLISH_ARG=""
+          if [ -n "${{ env.PUBLISH_AT }}" ]; then
+            PUBLISH_ARG="--publish-at ${{ env.PUBLISH_AT }}"
+          fi
           if [ "${{ env.UPLOAD_ENABLED }}" = "true" ]; then
-            python main.py --type ${{ env.VIDEO_TYPE }} --count ${{ env.VIDEO_COUNT }}
+            python main.py --type ${{ env.VIDEO_TYPE }} --count ${{ env.VIDEO_COUNT }} $PUBLISH_ARG
           else
             python main.py --type ${{ env.VIDEO_TYPE }} --count ${{ env.VIDEO_COUNT }} --no-upload
           fi
@@ -137,3 +184,10 @@ jobs:
             output/longform_images/*.jpg
             logs/*.json
           retention-days: 7
+
+      - name: Persist topic history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: logs/topic_history.json
+          key: topic-history-${{ github.run_number }}

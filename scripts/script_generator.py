@@ -9,6 +9,9 @@ import random
 import re
 import os
 from datetime import datetime
+from topic_manager import (
+    pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked
+)
 
 try:
     import google.generativeai as genai
@@ -99,13 +102,19 @@ class ScriptGenerator:
             if use_trending:
                 trending = self.get_trending_topic()
                 if trending:
-                    topic = random.choice(trending)
-                    print(f"✅ 트렌디한 주제 선택: {topic}")
+                    # 트렌딩 주제 중 차단/중복 필터링
+                    filtered = filter_trending_topics(trending, 'shorts')
+                    if filtered:
+                        topic = random.choice(filtered)
+                        print(f"✅ 트렌디한 주제 선택: {topic}")
+                    else:
+                        topic = pick_unique_topic(self.topics, 'shorts')
+                        print(f"📌 고정 주제 선택 (트렌딩 중복): {topic}")
                 else:
-                    topic = random.choice(self.topics)
+                    topic = pick_unique_topic(self.topics, 'shorts')
                     print(f"📌 고정 주제 선택: {topic}")
             else:
-                topic = random.choice(self.topics)
+                topic = pick_unique_topic(self.topics, 'shorts')
                 print(f"📌 고정 주제 선택: {topic}")
 
         prompt = self._build_prompt(topic)
@@ -118,6 +127,7 @@ class ScriptGenerator:
                 result = self._parse_response(raw, topic)
                 if result:
                     print(f"✅ 쇼츠 데이터 생성 완료: {result.get('title', 'N/A')}")
+                    record_topic('shorts', topic, result.get('title', ''))
                 return result
 
             except Exception as e:

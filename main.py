@@ -45,7 +45,7 @@ class YouTubeAutomation:
         os.makedirs("output/longform_images", exist_ok=True)
         os.makedirs("logs", exist_ok=True)
     
-    def create_video(self, topic=None, upload=True):
+    def create_video(self, topic=None, upload=True, publish_at=''):
         """쇼츠 영상 생성 및 업로드 (구조화 메타데이터 + 5장 AI 이미지)"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -129,8 +129,9 @@ class YouTubeAutomation:
                 script_data,
                 thumbnail_path=thumbnail_path,
                 channel_id=target_channel_id,
-                metadata=script_data,  # title, description, tags, pinned_comment 포함
-                add_pinned_comment=True
+                metadata=script_data,
+                add_pinned_comment=True,
+                publish_at=publish_at
             )
             if upload_result:
                 result['upload'] = upload_result
@@ -155,7 +156,7 @@ class YouTubeAutomation:
             json.dump(result, f, ensure_ascii=False, indent=2)
         print(f"📋 로그 저장: {log_path}")
     
-    def batch_create(self, count=3, upload=True):
+    def batch_create(self, count=3, upload=True, publish_at=''):
         """여러 영상 일괄 생성"""
         print(f"\n🚀 {count}개의 영상을 일괄 생성합니다...\n")
         
@@ -165,7 +166,7 @@ class YouTubeAutomation:
             print(f"영상 {i+1}/{count} 생성 중...")
             print(f"{'='*60}")
             
-            result = self.create_video(upload=upload)
+            result = self.create_video(upload=upload, publish_at=publish_at)
             if result:
                 results.append(result)
             
@@ -181,7 +182,7 @@ class YouTubeAutomation:
         
         return results
     
-    def create_longform_video(self, topic=None, upload=True):
+    def create_longform_video(self, topic=None, upload=True, publish_at=''):
         """롱폼 영상 생성 및 업로드 (10-15분)"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -275,7 +276,8 @@ class YouTubeAutomation:
                 script_data,
                 thumbnail_path=thumbnail_path if thumb else None,
                 add_pinned_comment=True,
-                metadata=metadata
+                metadata=metadata,
+                publish_at=publish_at
             )
             
             if upload_result:
@@ -302,6 +304,8 @@ def main():
     parser.add_argument('--count', type=int, default=1, help='생성할 영상 개수')
     parser.add_argument('--no-upload', action='store_true', help='업로드하지 않고 비디오만 생성')
     parser.add_argument('--test', action='store_true', help='테스트 모드 (업로드 없음)')
+    parser.add_argument('--publish-at', type=str, default='',
+                       help='YouTube 예약 공개 시간 (ISO 8601, 예: 2026-02-19T08:30:00+09:00)')
     
     args = parser.parse_args()
     
@@ -312,21 +316,23 @@ def main():
     upload = not args.no_upload and not args.test
     
     # 비디오 타입에 따라 생성
+    publish_at = args.publish_at
+    
     if args.type == 'shorts':
         if args.count == 1:
-            automation.create_video(topic=args.topic, upload=upload)
+            automation.create_video(topic=args.topic, upload=upload, publish_at=publish_at)
         else:
-            automation.batch_create(count=args.count, upload=upload)
+            automation.batch_create(count=args.count, upload=upload, publish_at=publish_at)
     
     elif args.type == 'longform':
-        automation.create_longform_video(topic=args.topic, upload=upload)
+        automation.create_longform_video(topic=args.topic, upload=upload, publish_at=publish_at)
     
     elif args.type == 'both':
         print("🎥 쇼츠와 롱폼 영상을 모두 생성합니다.\n")
         
         # 쇼츠 생성
         print("1️⃣  쇼츠 생성 중...")
-        automation.create_video(topic=args.topic, upload=upload)
+        automation.create_video(topic=args.topic, upload=upload, publish_at=publish_at)
         
         # 잠시 대기
         import time
@@ -334,7 +340,7 @@ def main():
         
         # 롱폼 생성
         print("\n2️⃣  롱폼 비디오 생성 중...")
-        automation.create_longform_video(topic=args.topic, upload=upload)
+        automation.create_longform_video(topic=args.topic, upload=upload, publish_at=publish_at)
 
 
 if __name__ == '__main__':

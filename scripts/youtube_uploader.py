@@ -5,6 +5,7 @@ Google YouTube Data API v3를 사용하여 영상을 자동으로 업로드합�
 
 import json
 import os
+from datetime import datetime, timezone, timedelta
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -158,13 +159,15 @@ class YouTubeUploader:
             return None
     
     def upload_video(self, video_path, script_data, thumbnail_path=None,
-                     channel_id=None, metadata=None, add_pinned_comment=True):
+                     channel_id=None, metadata=None, add_pinned_comment=True,
+                     publish_at=''):
         """비디오를 YouTube에 업로드
 
         Args:
             metadata: script_generator에서 생성된 구조화 데이터 dict
                       (title, description, hashtags, tags, pinned_comment)
                       None이면 script_data에서 직접 추출
+            publish_at: 예약 공개 시간 (ISO 8601, 비어있으면 즉시 공개)
         """
 
         # 채널 ID 지정된 경우 새로운 업로더 인스턴스 생성
@@ -172,7 +175,8 @@ class YouTubeUploader:
             uploader = YouTubeUploader(channel_id=channel_id)
             return uploader.upload_video(video_path, script_data, thumbnail_path,
                                          metadata=metadata,
-                                         add_pinned_comment=add_pinned_comment)
+                                         add_pinned_comment=add_pinned_comment,
+                                         publish_at=publish_at)
 
         if not self.youtube:
             if not self.authenticate():
@@ -281,6 +285,14 @@ class YouTubeUploader:
                     'selfDeclaredMadeForKids': False
                 }
             }
+
+            # 예약 공개 설정 (시간이 이미 지났으면 즉시 공개로 전환)
+            if publish_at:
+                publish_at = self._validate_publish_at(publish_at)
+            if publish_at:
+                body['status']['privacyStatus'] = 'private'
+                body['status']['publishAt'] = publish_at
+                print(f"⏰ 예약 공개 설정: {publish_at}")
 
             # 미디어 파일 업로드
             media = MediaFileUpload(
@@ -434,12 +446,13 @@ class YouTubeUploader:
             return None
     
     def upload_longform_video(self, video_path, script_data, thumbnail_path=None,
-                              add_pinned_comment=True, metadata=None):
+                              add_pinned_comment=True, metadata=None, publish_at=''):
         """롱폼 비디오 업로드 (메타데이터 자동 최적화)
         
         Args:
             metadata: generate_metadata()로 생성된 메타데이터 dict
                       (title, description, tags, hashtags, pinned_comment)
+            publish_at: 예약 공개 시간 (ISO 8601, 비어있으면 즉시 공개)
         """
         
         if not self.youtube:
@@ -491,6 +504,14 @@ class YouTubeUploader:
                     'embeddable': True
                 }
             }
+
+            # 예약 공개 설정 (시간이 이미 지났으면 즉시 공개로 전환)
+            if publish_at:
+                publish_at = self._validate_publish_at(publish_at)
+            if publish_at:
+                body['status']['privacyStatus'] = 'private'
+                body['status']['publishAt'] = publish_at
+                print(f"⏰ 예약 공개 설정: {publish_at}")
             
             # 미디어 파일 업로드
             media = MediaFileUpload(
@@ -543,6 +564,28 @@ class YouTubeUploader:
             import traceback
             traceback.print_exc()
             return None
+
+    def _validate_publish_at(self, publish_at):
+        """예약 공개 시간 검증 — 이미 지났거나 5분 이내면 즉시 공개로 전환"""
+        try:
+            # ISO 8601 파싱 (예: 2026-02-20T22:00:00+09:00)
+            target = datetime.fromisoformat(publish_at)
+            now = datetime.now(timezone.utc)
+            remaining = (target - now).total_seconds()
+
+            if remaining < 300:  # 5분 미만 남았거나 이미 지남
+                if remaining < 0:
+                    print(f"⚠️  예약 시간({publish_at})이 이미 지났습니다 → 즉시 공개로 전환")
+                else:
+                    print(f"⚠️  예약 시간까지 {remaining:.0f}초 남음 (5분 미만) → 즉시 공개로 전환")
+                return ''  # 빈 문자열 → publishAt 미설정 → 즉시 공개
+            
+            mins = remaining / 60
+            print(f"✅ 예약 공개까지 {mins:.0f}분 남음")
+            return publish_at
+        except Exception as e:
+            print(f"⚠️  예약 시간 파싱 오류({publish_at}): {e} → 즉시 공개로 전환")
+            return ''
 
     @staticmethod
     def _strip_markdown(text):

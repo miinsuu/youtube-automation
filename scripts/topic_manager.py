@@ -1,0 +1,157 @@
+"""
+주제 이력 관리 모듈
+이전에 사용한 주제를 추적하여 중복 생성을 방지합니다.
+"""
+
+import json
+import os
+from datetime import datetime, timedelta
+
+
+HISTORY_FILE = "logs/topic_history.json"
+
+# 의미없는/저품질 주제 필터링 키워드
+BLOCKED_KEYWORDS = [
+    "밈", "meme", "트렌드 밈", "짤", "유행어", "챌린지",
+    "tiktok", "틱톡", "릴스", "viral", "바이럴",
+    "드립", "인터넷 밈", "짤방", "웃긴",
+]
+
+
+def _load_history():
+    """주제 이력 파일 로드"""
+    if not os.path.exists(HISTORY_FILE):
+        return {"shorts": [], "longform": []}
+    try:
+        with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {"shorts": [], "longform": []}
+
+
+def _save_history(history):
+    """주제 이력 파일 저장"""
+    os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def record_topic(video_type, topic, title=""):
+    """사용한 주제를 이력에 기록"""
+    history = _load_history()
+    if video_type not in history:
+        history[video_type] = []
+
+    history[video_type].append({
+        "topic": topic,
+        "title": title,
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+    })
+
+    _save_history(history)
+
+
+def get_used_topics(video_type, days=30):
+    """최근 N일간 사용된 주제 목록 반환"""
+    history = _load_history()
+    entries = history.get(video_type, [])
+
+    cutoff = datetime.now() - timedelta(days=days)
+    used = []
+    for entry in entries:
+        try:
+            dt = datetime.strptime(entry["date"], "%Y-%m-%d %H:%M")
+            if dt >= cutoff:
+                used.append(entry["topic"])
+        except (ValueError, KeyError):
+            used.append(entry.get("topic", ""))
+    return used
+
+
+def is_topic_blocked(topic):
+    """의미없는/저품질 주제인지 확인"""
+    topic_lower = topic.lower().strip()
+    for kw in BLOCKED_KEYWORDS:
+        if kw.lower() in topic_lower:
+            return True
+    return False
+
+
+def is_topic_duplicate(topic, used_topics):
+    """주제가 이미 사용된 주제와 중복(또는 유사)한지 확인"""
+    topic_clean = topic.strip()
+
+    for used in used_topics:
+        used_clean = used.strip()
+        # 완전 일치
+        if topic_clean == used_clean:
+            return True
+        # 한쪽이 다른쪽을 포함
+        if len(topic_clean) > 5 and len(used_clean) > 5:
+            if topic_clean in used_clean or used_clean in topic_clean:
+                return True
+        # 공통 핵심 단어 비율로 유사도 체크
+        words_a = set(topic_clean.split())
+        words_b = set(used_clean.split())
+        if len(words_a) >= 3 and len(words_b) >= 3:
+            common = words_a & words_b
+            ratio = len(common) / min(len(words_a), len(words_b))
+            if ratio >= 0.6:
+                return True
+    return False
+
+
+def pick_unique_topic(topics, video_type, days=30):
+    """중복되지 않고 차단되지 않은 주제를 선택. 없으면 가장 오래된 것 재사용."""
+    import random
+
+    used = get_used_topics(video_type, days=days)
+
+    # 1차: 미사용 + 비차단 주제 중 선택
+    available = [t for t in topics
+                 if not is_topic_duplicate(t, used) and not is_topic_blocked(t)]
+
+    if available:
+        choice = random.choice(available)
+        return choice
+
+    # 2차: 차단 키워드만 제외하고 재시도 (days 줄임)
+    used_short = get_used_topics(video_type, days=14)
+    available2 = [t for t in topics
+                  if not is_topic_duplicate(t, used_short) and not is_topic_blocked(t)]
+
+    if available2:
+        choice = random.choice(available2)
+        return choice
+
+    # 3차: 차단만 제외하고 가장 덜 최근 것
+    non_blocked = [t for t in topics if not is_topic_blocked(t)]
+    if non_blocked:
+        # 사용 이력에서 가장 오래된 순으로 정렬
+        history = _load_history()
+        entries = history.get(video_type, [])
+        topic_last_used = {}
+        for entry in entries:
+            t = entry.get("topic", "")
+            topic_last_used[t] = entry.get("date", "2000-01-01 00:00")
+
+        non_blocked.sort(key=lambda t: topic_last_used.get(t, "2000-01-01 00:00"))
+        return non_blocked[0]
+
+    # 최종 폴백
+    return random.choice(topics)
+
+
+def filter_trending_topics(trending_list, video_type):
+    """트렌딩 주제 목록에서 차단/중복 제거"""
+    used = get_used_topics(video_type, days=30)
+    filtered = []
+    for t in trending_list:
+        if is_topic_blocked(t):
+            print(f"  ⛔ 차단 주제 제외: {t}")
+            continue
+        if is_topic_duplicate(t, used):
+            print(f"  🔄 중복 주제 제외: {t}")
+            continue
+        filtered.append(t)
+    return filtered
