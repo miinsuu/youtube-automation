@@ -44,6 +44,21 @@ class YouTubeAutomation:
         os.makedirs("output/images", exist_ok=True)
         os.makedirs("output/longform_images", exist_ok=True)
         os.makedirs("logs", exist_ok=True)
+
+        # YouTube 채널 기존 영상과 주제 중복 방지
+        self._sync_youtube_topics()
+    
+    def _sync_youtube_topics(self):
+        """YouTube 채널의 기존 영상 제목을 주제 중복 체크에 반영"""
+        try:
+            from topic_manager import set_youtube_titles
+            videos = self.uploader.get_recent_videos(max_results=100)
+            if videos:
+                titles = [v['title'] for v in videos]
+                set_youtube_titles(titles)
+                print(f"✅ YouTube 채널 영상 {len(titles)}개 동기화 (중복 방지)")
+        except Exception as e:
+            print(f"⚠️ YouTube 채널 동기화 건너뜀: {e}")
     
     def create_video(self, topic=None, upload=True, publish_at=''):
         """쇼츠 영상 생성 및 업로드 (구조화 메타데이터 + 5장 AI 이미지)"""

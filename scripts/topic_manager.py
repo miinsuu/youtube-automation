@@ -17,6 +17,24 @@ BLOCKED_KEYWORDS = [
     "드립", "인터넷 밈", "짤방", "웃긴",
 ]
 
+# YouTube 채널에 이미 올라와 있는 영상 제목 (런타임에 설정)
+_youtube_titles = []
+
+
+def set_youtube_titles(titles):
+    """YouTube 채널 기존 영상 제목을 중복 체크 대상에 등록"""
+    global _youtube_titles
+    import re
+    cleaned = []
+    for t in titles:
+        # 이모지, 해시태그, 특수문자 제거 → 핵심 키워드만 추출
+        c = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FAFF]+', '', t)
+        c = re.sub(r'#\S+', '', c)
+        c = c.strip()
+        if c:
+            cleaned.append(c)
+    _youtube_titles = cleaned
+
 
 def _load_history():
     """주제 이력 파일 로드"""
@@ -52,7 +70,7 @@ def record_topic(video_type, topic, title=""):
 
 
 def get_used_topics(video_type, days=30):
-    """최근 N일간 사용된 주제 목록 반환"""
+    """최근 N일간 사용된 주제 목록 반환 (YouTube 채널 기존 영상 포함)"""
     history = _load_history()
     entries = history.get(video_type, [])
 
@@ -65,6 +83,9 @@ def get_used_topics(video_type, days=30):
                 used.append(entry["topic"])
         except (ValueError, KeyError):
             used.append(entry.get("topic", ""))
+
+    # YouTube 채널 기존 영상 제목도 포함
+    used.extend(_youtube_titles)
     return used
 
 

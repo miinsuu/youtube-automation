@@ -158,6 +158,50 @@ class YouTubeUploader:
             print(f"❌ 채널 조회 오류: {e}")
             return None
     
+    def get_recent_videos(self, max_results=100):
+        """채널의 최근 업로드 영상 제목 목록 조회 (중복 방지용)"""
+        if not self.youtube:
+            if not self.authenticate():
+                return []
+
+        try:
+            # 채널의 uploads playlist ID 가져오기
+            channel_resp = self.youtube.channels().list(
+                part='contentDetails',
+                mine=True
+            ).execute()
+
+            if not channel_resp.get('items'):
+                print("⚠️ 채널 정보를 가져올 수 없습니다")
+                return []
+
+            uploads_id = channel_resp['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+
+            # 최근 영상 목록 가져오기 (페이징)
+            videos = []
+            request = self.youtube.playlistItems().list(
+                part='snippet',
+                playlistId=uploads_id,
+                maxResults=min(max_results, 50)
+            )
+
+            while request and len(videos) < max_results:
+                response = request.execute()
+                for item in response.get('items', []):
+                    snippet = item['snippet']
+                    videos.append({
+                        'title': snippet.get('title', ''),
+                        'published_at': snippet.get('publishedAt', ''),
+                    })
+                request = self.youtube.playlistItems().list_next(request, response)
+
+            print(f"📺 채널 영상 {len(videos)}개 조회 완료")
+            return videos
+
+        except Exception as e:
+            print(f"⚠️ 채널 영상 목록 조회 실패: {e}")
+            return []
+
     def upload_video(self, video_path, script_data, thumbnail_path=None,
                      channel_id=None, metadata=None, add_pinned_comment=True,
                      publish_at=''):

@@ -152,14 +152,6 @@ jobs:
               json.dump(config, f, indent=2, ensure_ascii=False)
           "
       
-      - name: Restore topic history
-        uses: actions/cache/restore@v4
-        with:
-          path: logs/topic_history.json
-          key: topic-history-
-          restore-keys: |
-            topic-history-
-
       - name: Create video
         run: |
           PUBLISH_ARG=""
@@ -185,9 +177,11 @@ jobs:
             logs/*.json
           retention-days: 7
 
-      - name: Persist topic history
+      - name: Persist topic history to repo
         if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: logs/topic_history.json
-          key: topic-history-${{ github.run_number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add -f logs/topic_history.json
+          git diff --staged --quiet || (git commit -m "chore: update topic history [skip ci]" && git push)

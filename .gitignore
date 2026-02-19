@@ -22,6 +22,7 @@ config/config.json.local.bak
 # Output files
 output/
 logs/
+!logs/topic_history.json
 *.log
 
 # OS
