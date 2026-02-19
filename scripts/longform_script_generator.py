@@ -9,7 +9,9 @@ import sys
 import re
 import time
 from datetime import datetime
-from topic_manager import pick_unique_topic, record_topic
+from topic_manager import (
+    pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked
+)
 
 try:
     import google.generativeai as genai
@@ -38,11 +40,58 @@ class LongformScriptGenerator:
         self.topics = self.config.get('content', {}).get('longform', {}).get('topics', [])
         self.target_length = "10-15분"
     
+    def get_trending_topic(self):
+        """Gemini API에서 롱폼에 적합한 트렌디한 주제를 추천받습니다."""
+        try:
+            prompt = """현재 유튜브에서 10-15분 롱폼 영상으로 조회수와 구독이 잘 나오는 한국 주제 3개를 추천해주세요.
+
+요구사항:
+- 한국인을 타겟으로 하는 깊이있는 스토리텔링/자기계발/감동 주제
+- 각 주제는 한 줄씩만 (30자 이내)
+
+다음 JSON 형식으로만 답변하세요:
+{"topics":["주제1","주제2","주제3"]}"""
+
+            response = self.model.generate_content(prompt)
+            content = response.text.strip()
+
+            json_match = re.search(r'\{[^{}]*"topics"[^{}]*\}', content)
+            if not json_match:
+                json_match = re.search(r'\{[\s\S]*?\}', content)
+
+            if json_match:
+                result = json.loads(json_match.group())
+                trending_topics = [t.strip() for t in result.get('topics', [])
+                                   if t and isinstance(t, str) and len(t.strip()) > 0]
+                if trending_topics:
+                    print(f"🔥 롱폼 트렌디한 주제 {len(trending_topics)}개 추천받음!")
+                    return trending_topics
+
+        except Exception as e:
+            print(f"⚠️ 트렌디한 주제 추천 실패: {str(e)[:100]}")
+
+        return None
+
     def generate_script(self, topic=None):
         """롱폼 스크립트 생성"""
         if not topic:
-            topic = pick_unique_topic(self.topics, 'longform')
-            print(f"📌 중복 방지 주제 선택: {topic}")
+            use_trending = random.random() < 0.5
+            if use_trending:
+                trending = self.get_trending_topic()
+                if trending:
+                    filtered = filter_trending_topics(trending, 'longform')
+                    if filtered:
+                        topic = random.choice(filtered)
+                        print(f"✅ 트렌디한 주제 선택: {topic}")
+                    else:
+                        topic = pick_unique_topic(self.topics, 'longform')
+                        print(f"📌 고정 주제 선택 (트렌딩 중복): {topic}")
+                else:
+                    topic = pick_unique_topic(self.topics, 'longform')
+                    print(f"📌 고정 주제 선택: {topic}")
+            else:
+                topic = pick_unique_topic(self.topics, 'longform')
+                print(f"📌 고정 주제 선택: {topic}")
         
         print(f"\n📚 롱폼 스크립트 생성 중: {topic}")
         
