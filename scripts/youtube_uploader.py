@@ -328,6 +328,11 @@ class YouTubeUploader:
                     title_with_tags = f"{title} {title_hashtag_str}"
             title = title_with_tags
 
+            # 예약 공개 검증 (시간이 이미 지났으면 즉시 공개로 전환)
+            scheduled_publish_at = ''
+            if publish_at:
+                scheduled_publish_at = self._validate_publish_at(publish_at)
+
             body = {
                 'snippet': {
                     'title': title,
@@ -336,18 +341,14 @@ class YouTubeUploader:
                     'categoryId': shorts_config.get('category_id', '22')
                 },
                 'status': {
-                    'privacyStatus': shorts_config.get('privacy_status', 'public'),
+                    # 예약 공개 시: unlisted로 업로드 → 댓글 추가 → private+publishAt 전환
+                    'privacyStatus': 'unlisted' if scheduled_publish_at else shorts_config.get('privacy_status', 'public'),
                     'selfDeclaredMadeForKids': False
                 }
             }
 
-            # 예약 공개 설정 (시간이 이미 지났으면 즉시 공개로 전환)
-            if publish_at:
-                publish_at = self._validate_publish_at(publish_at)
-            if publish_at:
-                body['status']['privacyStatus'] = 'private'
-                body['status']['publishAt'] = publish_at
-                print(f"⏰ 예약 공개 설정: {publish_at}")
+            if scheduled_publish_at:
+                print(f"⏰ 예약 공개 예정: {scheduled_publish_at} (댓글 추가 후 전환)")
 
             # 미디어 파일 업로드
             media = MediaFileUpload(
@@ -384,6 +385,10 @@ class YouTubeUploader:
             # 고정 댓글 추가
             if add_pinned_comment and pinned_text:
                 self.add_pinned_comment(video_id, pinned_text)
+
+            # 예약 공개로 전환 (unlisted → private + publishAt)
+            if scheduled_publish_at:
+                self._set_scheduled_publish(video_id, scheduled_publish_at)
 
             return {
                 'video_id': video_id,
@@ -545,6 +550,11 @@ class YouTubeUploader:
             category_id = longform_config.get('category_id', '27')
             privacy = longform_config.get('privacy_status', 'public')
             
+            # 예약 공개 검증 (시간이 이미 지났으면 즉시 공개로 전환)
+            scheduled_publish_at = ''
+            if publish_at:
+                scheduled_publish_at = self._validate_publish_at(publish_at)
+
             # 비디오 body
             body = {
                 'snippet': {
@@ -554,19 +564,15 @@ class YouTubeUploader:
                     'categoryId': category_id
                 },
                 'status': {
-                    'privacyStatus': privacy,
+                    # 예약 공개 시: unlisted로 업로드 → 댓글 추가 → private+publishAt 전환
+                    'privacyStatus': 'unlisted' if scheduled_publish_at else privacy,
                     'selfDeclaredMadeForKids': False,
                     'embeddable': True
                 }
             }
 
-            # 예약 공개 설정 (시간이 이미 지났으면 즉시 공개로 전환)
-            if publish_at:
-                publish_at = self._validate_publish_at(publish_at)
-            if publish_at:
-                body['status']['privacyStatus'] = 'private'
-                body['status']['publishAt'] = publish_at
-                print(f"⏰ 예약 공개 설정: {publish_at}")
+            if scheduled_publish_at:
+                print(f"⏰ 예약 공개 예정: {scheduled_publish_at} (댓글 추가 후 전환)")
             
             # 미디어 파일 업로드
             media = MediaFileUpload(
@@ -606,6 +612,10 @@ class YouTubeUploader:
             # 고정 댓글 추가
             if add_pinned_comment and pinned_text:
                 self.add_pinned_comment(video_id, pinned_text)
+
+            # 예약 공개로 전환 (unlisted → private + publishAt)
+            if scheduled_publish_at:
+                self._set_scheduled_publish(video_id, scheduled_publish_at)
             
             return {
                 'video_id': video_id,
@@ -619,6 +629,27 @@ class YouTubeUploader:
             import traceback
             traceback.print_exc()
             return None
+
+    def _set_scheduled_publish(self, video_id, publish_at):
+        """업로드 완료 후 예약 공개로 전환 (unlisted → private + publishAt)"""
+        try:
+            self.youtube.videos().update(
+                part='status',
+                body={
+                    'id': video_id,
+                    'status': {
+                        'privacyStatus': 'private',
+                        'publishAt': publish_at,
+                        'selfDeclaredMadeForKids': False
+                    }
+                }
+            ).execute()
+            print(f"✅ 예약 공개 전환 완료: {publish_at}")
+            return True
+        except Exception as e:
+            print(f"⚠️  예약 공개 전환 실패: {e}")
+            print(f"   비디오가 unlisted 상태로 남아있습니다. YouTube Studio에서 수동 설정하세요.")
+            return False
 
     def _validate_publish_at(self, publish_at):
         """예약 공개 시간 검증 — 이미 지났거나 5분 이내면 즉시 공개로 전환"""

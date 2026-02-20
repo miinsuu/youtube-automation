@@ -66,8 +66,9 @@ jobs:
           now = datetime.now(kst)
           target = now.replace(hour=12, minute=0, second=0, microsecond=0)
           if target <= now:
-              target += timedelta(days=1)
-          print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
+              print('')
+          else:
+              print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
           ")
             echo "PUBLISH_AT=$PUBLISH_AT" >> $GITHUB_ENV
           elif [ "${{ github.event.schedule }}" = "23 3 * * *" ]; then
@@ -79,8 +80,9 @@ jobs:
           now = datetime.now(kst)
           target = now.replace(hour=18, minute=0, second=0, microsecond=0)
           if target <= now:
-              target += timedelta(days=1)
-          print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
+              print('')
+          else:
+              print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
           ")
             echo "PUBLISH_AT=$PUBLISH_AT" >> $GITHUB_ENV
           elif [ "${{ github.event.schedule }}" = "23 7 * * *" ]; then
@@ -92,8 +94,9 @@ jobs:
           now = datetime.now(kst)
           target = now.replace(hour=22, minute=0, second=0, microsecond=0)
           if target <= now:
-              target += timedelta(days=1)
-          print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
+              print('')
+          else:
+              print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
           ")
             echo "PUBLISH_AT=$PUBLISH_AT" >> $GITHUB_ENV
           fi
