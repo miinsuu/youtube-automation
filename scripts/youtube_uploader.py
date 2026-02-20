@@ -56,8 +56,13 @@ class YouTubeUploader:
         # 인증 정보가 없거나 만료된 경우
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"⚠️ 토큰 갱신 실패: {e}")
+                    creds = None  # 재인증 흐름으로 전환
+            
+            if not creds or not creds.valid:
                 if not os.path.exists(self.client_secrets):
                     print("❌ client_secrets.json 파일이 필요합니다.")
                     print("   Google Cloud Console에서 OAuth 2.0 클라이언트 ID를 생성하세요.")
@@ -66,8 +71,11 @@ class YouTubeUploader:
                 
                 # CI/GitHub Actions 환경에서는 브라우저 인증 불가
                 if os.environ.get('GITHUB_ACTIONS') or os.environ.get('CI'):
-                    print("❌ 유효한 인증 정보가 없습니다. CI 환경에서는 브라우저 인증이 불가합니다.")
-                    print("   YOUTUBE_CREDENTIALS 시크릿이 올바른 OAuth2 토큰 JSON인지 확인하세요.")
+                    print("❌ OAuth2 토큰이 만료/취소되었습니다. CI 환경에서는 재인증이 불가합니다.")
+                    print("   로컬에서 재인증 후 YOUTUBE_CREDENTIALS 시크릿을 업데이트하세요:")
+                    print("   1) 로컬: python scripts/youtube_uploader.py  (브라우저 인증)")
+                    print("   2) cat config/youtube_credentials_L4y1Qbdg.json")
+                    print("   3) GitHub → Settings → Secrets → YOUTUBE_CREDENTIALS 업데이트")
                     return False
                 
                 flow = InstalledAppFlow.from_client_secrets_file(
