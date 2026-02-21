@@ -194,5 +194,7 @@ jobs:
           git add -f logs/topic_history.json
           git diff --staged --quiet && exit 0
           git commit -m "chore: update topic history [skip ci]"
+          git stash --include-untracked
           git pull --rebase origin main || true
+          git stash pop || true
           git push
