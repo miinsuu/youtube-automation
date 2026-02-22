@@ -273,9 +273,11 @@ class YouTubeUploader:
                 pinned_text = script_data.get('pinned_comment', '')
 
             # 롱폼 URL 연동 (쇼츠 설명란/고정댓글에 롱폼 링크 삽입)
-            # URL은 반드시 별도 줄에 배치 (YouTube가 클릭 가능 링크로 인식하려면 독립 줄 필요)
+            # 설명란: URL을 맨 앞에 배치 (Shorts 플레이어는 설명 축약 표시 → 맨 앞이 가장 잘 보임)
+            # 댓글: 별도 줄에 URL → YouTube가 <a href> 하이퍼링크로 렌더링 (모바일 탭 가능)
             if longform_url:
-                description = description.rstrip() + f"\n\n🎥 이 주제의 더 깊은 이야기 👇\n{longform_url}"
+                url_header = f"📺 풀영상 보러가기 👇\n{longform_url}\n\n"
+                description = url_header + description.lstrip()
                 if pinned_text:
                     pinned_text = f"📺 풀영상 보러가기 👇\n{longform_url}\n\n{pinned_text}"
                 else:
