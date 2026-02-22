@@ -274,10 +274,16 @@ class YouTubeUploader:
 
             # 롱폼 URL 연동 (쇼츠 설명란/고정댓글에 롱폼 링크 삽입)
             # 설명란: URL을 맨 앞에 배치 (Shorts 플레이어는 설명 축약 표시 → 맨 앞이 가장 잘 보임)
-            # 댓글: 별도 줄에 URL → YouTube가 <a href> 하이퍼링크로 렌더링 (모바일 탭 가능)
             if longform_url:
                 url_header = f"📺 풀영상 보러가기 👇\n{longform_url}\n\n"
                 description = url_header + description.lstrip()
+                # Gemini가 생성한 고정댓글에서 중복 풀영상 문구 제거
+                import re as _re2
+                pinned_text = _re2.sub(
+                    r'📺[^\n]*풀영상 보러가기[^\n]*\n?',
+                    '',
+                    pinned_text
+                ).lstrip()
                 if pinned_text:
                     pinned_text = f"📺 풀영상 보러가기 👇\n{longform_url}\n\n{pinned_text}"
                 else:
