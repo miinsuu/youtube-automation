@@ -304,15 +304,17 @@ class YouTubeUploader:
             if isinstance(hashtag_source, str):
                 import re as _re
                 hashtag_source = _re.findall(r'#\S+', hashtag_source)
-            # 태그에서 해시태그 보충
+            # 태그에서 해시태그 보충 (공백 제거: "재테크 꿀팁" → "#재테크꿀팁")
             for t in tags:
-                ht = f'#{t}' if not t.startswith('#') else t
+                t_clean = t.replace(' ', '') if isinstance(t, str) else t
+                ht = f'#{t_clean}' if not t_clean.startswith('#') else t_clean
                 if ht not in title_hashtags and ht != '#shorts':
                     title_hashtags.append(ht)
                 if len(title_hashtags) >= 5:
                     break
-            # hashtag_source에서 추가 보충
+            # hashtag_source에서 추가 보충 (공백 제거)
             for ht in hashtag_source:
+                ht = ht.replace(' ', '') if isinstance(ht, str) else ht
                 if ht not in title_hashtags:
                     title_hashtags.append(ht)
                 if len(title_hashtags) >= 5:
@@ -328,7 +330,8 @@ class YouTubeUploader:
             description = _re.sub(r'\n*#\S+(\s+#\S+)*\s*$', '', description).rstrip()
             desc_hashtags = ['#shorts']
             for t in tags:
-                ht = f'#{t}' if not t.startswith('#') else t
+                t_clean = t.replace(' ', '') if isinstance(t, str) else t
+                ht = f'#{t_clean}' if not t_clean.startswith('#') else t_clean
                 if ht not in desc_hashtags:
                     desc_hashtags.append(ht)
                 if len(desc_hashtags) >= 10:
@@ -461,9 +464,9 @@ class YouTubeUploader:
 🔔 더 좋은 콘텐츠를 위해 구독 부탁드립니다
 
 ---
-#스토리 #감동 #영감 #일상 #성공 #{' #'.join(tags[:5])}"""
+#스토리 #감동 #영감 #일상 #성공 #{' #'.join(t.replace(' ', '') for t in tags[:5])}"""
         
-        hashtags = " ".join([f"#{tag}" for tag in tags[:5]])
+        hashtags = " ".join([f"#{tag.replace(' ', '')}" for tag in tags[:5]])
         
         return {
             'title': f"{title}",
