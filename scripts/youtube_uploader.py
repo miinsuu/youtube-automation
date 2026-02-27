@@ -166,8 +166,12 @@ class YouTubeUploader:
             print(f"❌ 채널 조회 오류: {e}")
             return None
     
-    def get_recent_videos(self, max_results=100):
-        """채널의 최근 업로드 영상 제목 목록 조회 (중복 방지용)"""
+    def get_recent_videos(self, max_results=None):
+        """채널의 전체 업로드 영상 제목 목록 조회 (중복 방지용)
+        
+        Args:
+            max_results: 최대 조회 수 (None이면 전체 조회)
+        """
         if not self.youtube:
             if not self.authenticate():
                 return []
@@ -185,15 +189,15 @@ class YouTubeUploader:
 
             uploads_id = channel_resp['items'][0]['contentDetails']['relatedPlaylists']['uploads']
 
-            # 최근 영상 목록 가져오기 (페이징)
+            # 전체 영상 목록 가져오기 (모든 페이지)
             videos = []
             request = self.youtube.playlistItems().list(
                 part='snippet',
                 playlistId=uploads_id,
-                maxResults=min(max_results, 50)
+                maxResults=50  # API 최대값 50
             )
 
-            while request and len(videos) < max_results:
+            while request:
                 response = request.execute()
                 for item in response.get('items', []):
                     snippet = item['snippet']
@@ -201,9 +205,12 @@ class YouTubeUploader:
                         'title': snippet.get('title', ''),
                         'published_at': snippet.get('publishedAt', ''),
                     })
+                # max_results 지정 시 초과하면 중단
+                if max_results and len(videos) >= max_results:
+                    break
                 request = self.youtube.playlistItems().list_next(request, response)
 
-            print(f"📺 채널 영상 {len(videos)}개 조회 완료")
+            print(f"📺 채널 영상 {len(videos)}개 전체 조회 완료 (중복 방지용)")
             return videos
 
         except Exception as e:

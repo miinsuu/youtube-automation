@@ -49,14 +49,14 @@ class YouTubeAutomation:
         self._sync_youtube_topics()
     
     def _sync_youtube_topics(self):
-        """YouTube 채널의 기존 영상 제목을 주제 중복 체크에 반영"""
+        """YouTube 채널의 전체 영상 제목을 주제 중복 체크에 반영"""
         try:
             from topic_manager import set_youtube_titles
-            videos = self.uploader.get_recent_videos(max_results=100)
+            videos = self.uploader.get_recent_videos()  # max_results=None → 전체 조회
             if videos:
                 titles = [v['title'] for v in videos]
                 set_youtube_titles(titles)
-                print(f"✅ YouTube 채널 영상 {len(titles)}개 동기화 (중복 방지)")
+                print(f"✅ YouTube 채널 전체 영상 {len(titles)}개 동기화 (중복 방지)")
         except Exception as e:
             print(f"⚠️ YouTube 채널 동기화 건너뜀: {e}")
     

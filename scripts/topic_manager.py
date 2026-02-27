@@ -73,22 +73,34 @@ def record_topic(video_type, topic, title=""):
     _save_history(history)
 
 
-def get_used_topics(video_type, days=30):
-    """최근 N일간 사용된 주제 목록 반환 (YouTube 채널 기존 영상 포함)"""
+def get_used_topics(video_type, days=9999):
+    """지금까지 사용된 주제 목록 반환 (로컬 이력 + YouTube 채널 전체 영상 포함)
+    
+    Args:
+        days: 로컬 이력 기준 일수 (기본값 9999 = 사실상 전체)
+    """
     history = _load_history()
-    entries = history.get(video_type, [])
+    # shorts/longform 구분 없이 모든 이력 병합 (어떤 타입이든 중복 방지)
+    all_entries = []
+    for vtype in history:
+        all_entries.extend(history[vtype])
 
     cutoff = datetime.now() - timedelta(days=days)
     used = []
-    for entry in entries:
+    for entry in all_entries:
         try:
             dt = datetime.strptime(entry["date"], "%Y-%m-%d %H:%M")
             if dt >= cutoff:
-                used.append(entry["topic"])
+                used.append(entry.get("topic", ""))
+                # title도 중복 체크 대상에 포함
+                if entry.get("title"):
+                    used.append(entry["title"])
         except (ValueError, KeyError):
             used.append(entry.get("topic", ""))
+            if entry.get("title"):
+                used.append(entry["title"])
 
-    # YouTube 채널 기존 영상 제목도 포함
+    # YouTube 채널 전체 영상 제목도 포함
     used.extend(_youtube_titles)
     return used
 
@@ -126,8 +138,8 @@ def is_topic_duplicate(topic, used_topics):
     return False
 
 
-def pick_unique_topic(topics, video_type, days=30):
-    """중복되지 않고 차단되지 않은 주제를 선택. 없으면 가장 오래된 것 재사용."""
+def pick_unique_topic(topics, video_type, days=9999):
+    """중복되지 않고 사용 가능한 주제를 선택. 없으면 가장 오래된 것 재사용."""
     import random
 
     used = get_used_topics(video_type, days=days)
@@ -140,10 +152,11 @@ def pick_unique_topic(topics, video_type, days=30):
         choice = random.choice(available)
         return choice
 
-    # 2차: 차단 키워드만 제외하고 재시도 (days 줄임)
-    used_short = get_used_topics(video_type, days=14)
+    # 2차: 로컬 이력 무시하고 YouTube 채널 영상에만 없으면 허용
+    # (Gemini가 새 주제를 주지 않고 로컬 history에만 있는 경우 대비)
+    youtube_only_used = list(_youtube_titles)
     available2 = [t for t in topics
-                  if not is_topic_duplicate(t, used_short) and not is_topic_blocked(t)]
+                  if not is_topic_duplicate(t, youtube_only_used) and not is_topic_blocked(t)]
 
     if available2:
         choice = random.choice(available2)
@@ -154,9 +167,11 @@ def pick_unique_topic(topics, video_type, days=30):
     if non_blocked:
         # 사용 이력에서 가장 오래된 순으로 정렬
         history = _load_history()
-        entries = history.get(video_type, [])
+        all_entries = []
+        for vtype in history:
+            all_entries.extend(history[vtype])
         topic_last_used = {}
-        for entry in entries:
+        for entry in all_entries:
             t = entry.get("topic", "")
             topic_last_used[t] = entry.get("date", "2000-01-01 00:00")
 
@@ -168,8 +183,8 @@ def pick_unique_topic(topics, video_type, days=30):
 
 
 def filter_trending_topics(trending_list, video_type):
-    """트렌딩 주제 목록에서 차단/중복 제거"""
-    used = get_used_topics(video_type, days=30)
+    """트렌딩 주제 목록에서 차단/중복 제거 (전체 이력 + 전체 YouTube 채널 기준)"""
+    used = get_used_topics(video_type)  # days=9999 (전체)
     filtered = []
     for t in trending_list:
         if is_topic_blocked(t):
