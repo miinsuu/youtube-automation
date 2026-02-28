@@ -157,6 +157,26 @@ jobs:
               json.dump(config, f, indent=2, ensure_ascii=False)
           "
       
+      - name: Validate YouTube credentials
+        if: env.UPLOAD_ENABLED == 'true'
+        run: |
+          python3 -c "
+          import sys
+          sys.path.insert(0, 'scripts')
+          from youtube_uploader import YouTubeUploader
+          u = YouTubeUploader()
+          if not u.authenticate():
+              print('::error::YouTube 인증 실패 - YOUTUBE_CREDENTIALS Secret을 업데이트하세요')
+              print('::error::로컬에서: python scripts/youtube_uploader.py  → config/youtube_credentials_L4y1Qbdg.json 내용을 GitHub Secret(YOUTUBE_CREDENTIALS)에 붙여넣기')
+              sys.exit(1)
+          ch = u.get_authenticated_channel()
+          if ch:
+              print(f'✅ 인증 확인: {ch[\"title\"]} ({ch[\"id\"]})')
+          else:
+              print('::error::채널 조회 실패 - 인증은 됐지만 채널 정보를 읽을 수 없습니다')
+              sys.exit(1)
+          "
+
       - name: Create video
         run: |
           PUBLISH_ARG=""
