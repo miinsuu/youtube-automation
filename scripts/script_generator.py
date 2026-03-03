@@ -10,7 +10,8 @@ import re
 import os
 from datetime import datetime
 from topic_manager import (
-    pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked
+    pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked,
+    get_popular_categories_hint
 )
 
 try:
@@ -47,16 +48,25 @@ class ScriptGenerator:
     # 트렌디한 주제 추천
     # ──────────────────────────────────────────────────
     def get_trending_topic(self):
-        """Gemini API에서 요즘 조회수/구독이 잘 되는 트렌디한 주제를 추천받습니다."""
+        """요즘 조회수/구독이 잘 되는 트렌디한 주제를 추천받습니다. Gemini API를 사용."""
         try:
-            prompt = """현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 3개를 추천해주세요.
+            # 인기 카테고리 힌트가 있으면 프롬프트에 추가
+            category_hint = get_popular_categories_hint()
+            category_instruction = ""
+            if category_hint:
+                category_instruction = f"""\n\n참고: 이 채널에서 인기 있는 카테고리를 반영하여 비슷한 부류의 새로운 주제를 추천해주세요.
+단, 아래 인기 영상의 주제를 그대로 반복하지 말고, 같은 대분류의 '새로운' 주제여야 합니다.
+{category_hint}"""
+
+            prompt = f"""현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 3개를 추천해주세요.
 
 요구사항:
 - 한국인을 타겟으로 하는 고-조회수 주제만
 - 각 주제는 한 줄씩만 (30자 이내)
+- 반드시 한국어로 작성{category_instruction}
 
 다음 JSON 형식으로만 답변하세요:
-{"topics":["주제1","주제2","주제3"]}"""
+{{"topics":["주제1","주제2","주제3"]}}"""
 
             response = self.model.generate_content(prompt)
             content = response.text.strip()
@@ -71,6 +81,9 @@ class ScriptGenerator:
                 trending_topics = result.get('topics', [])
                 trending_topics = [t.strip() for t in trending_topics
                                    if t and isinstance(t, str) and len(t.strip()) > 0]
+                # 한국어가 포함된 주제만 필터링
+                trending_topics = [t for t in trending_topics
+                                   if re.search(r'[\uAC00-\uD7AF]', t)]
                 if trending_topics:
                     print(f"🔥 트렌디한 주제 {len(trending_topics)}개 추천받음!")
                     return trending_topics
@@ -165,6 +178,15 @@ class ScriptGenerator:
         return None
 
     # ──────────────────────────────────────────────────
+    # 인기 카테고리 힌트
+    # ──────────────────────────────────────────────────
+    @staticmethod
+    def _get_popular_hint():
+        """인기 영상 카테고리 힌트를 프롬프트에 삽입할 문자열로 반환"""
+        hint = get_popular_categories_hint()
+        return f"\n{hint}" if hint else ""
+
+    # ──────────────────────────────────────────────────
     # Gemini 프롬프트 빌드
     # ──────────────────────────────────────────────────
     def _build_prompt(self, topic, paired_with_longform=False):
@@ -223,7 +245,7 @@ class ScriptGenerator:
 아래 주제로 한국인 대상 유튜브 쇼츠를 위한 완전한 데이터 패키지를 만들어주세요.
 
 주제: {topic}
-
+{self._get_popular_hint()}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [규칙 — 반드시 지켜주세요]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -231,7 +253,8 @@ class ScriptGenerator:
 2. 모든 텍스트는 순수 텍스트 + 이모지만 사용합니다.
 3. TTS 대본에는 이모지, 특수기호, 마크다운을 절대 넣지 마세요.
 4. TTS 대본에서 숫자는 아라비아 숫자 그대로 쓰세요 (예: 3가지, 100만 원 등). 한글 숫자 금지.
-5. 이미지 프롬프트는 영어로 작성하세요.
+5. 이미지 프롬프트만 영어로 작성하세요.
+6. 제목, 설명, 해시태그, 고정댓글, 태그, TTS 대본은 반드시 한국어로 작성하세요. 영어로 작성하면 절대 안 됩니다.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [출력 형식 — 정확히 이 형식으로 출력]
@@ -352,6 +375,16 @@ PROMPT_5: (아웃트로 이미지 프롬프트)
             print("⚠️ TTS 대본이 비어있습니다")
             return None
 
+        # 한국어 검증: 대본에 한국어가 포함되어 있는지 확인
+        if not re.search(r'[\uAC00-\uD7AF]', script):
+            print("⚠️ TTS 대본이 한국어가 아닙니다 — 재생성 필요")
+            return None
+
+        # 제목 한국어 검증
+        if not re.search(r'[\uAC00-\uD7AF]', title):
+            print("⚠️ 제목이 한국어가 아닙니다 — 재생성 필요")
+            return None
+
         result = {
             'title': title,
             'hashtags': hashtags,
@@ -373,6 +406,17 @@ PROMPT_5: (아웃트로 이미지 프롬프트)
         print(f"   고정댓글: {len(pinned_comment)}자")
 
         return result
+
+    # ──────────────────────────────────────────────────
+    # 인기 카테고리 힌트
+    # ──────────────────────────────────────────────────
+    @staticmethod
+    def _get_popular_hint():
+        """인기 영상 카테고리 힌트를 _build_prompt에 삽입할 문자열로 반환"""
+        hint = get_popular_categories_hint()
+        if hint:
+            return f"\n{hint}"
+        return ""
 
     # ──────────────────────────────────────────────────
     # 유틸리티

@@ -47,6 +47,8 @@ class YouTubeAutomation:
 
         # YouTube 채널 기존 영상과 주제 중복 방지
         self._sync_youtube_topics()
+        # 인기 영상 분석 → 주제 선정에 반영
+        self._sync_popular_categories()
     
     def _sync_youtube_topics(self):
         """YouTube 채널의 전체 영상 제목을 주제 중복 체크에 반영"""
@@ -59,6 +61,17 @@ class YouTubeAutomation:
                 print(f"✅ YouTube 채널 전체 영상 {len(titles)}개 동기화 (중복 방지)")
         except Exception as e:
             print(f"⚠️ YouTube 채널 동기화 건너뜀: {e}")
+    
+    def _sync_popular_categories(self):
+        """인기 영상 통계를 분석하여 주제 선정에 반영"""
+        try:
+            from topic_manager import analyze_popular_categories
+            popular = self.uploader.get_popular_videos(top_n=15)
+            if popular:
+                analyze_popular_categories(popular)
+                print(f"✅ 인기 영상 카테고리 분석 완료 (TOP {len(popular)})")
+        except Exception as e:
+            print(f"⚠️ 인기 영상 분석 건너뜀: {e}")
     
     def create_video(self, topic=None, upload=True, publish_at='', longform_url=''):
         """쇼츠 영상 생성 및 업로드 (구조화 메타데이터 + 5장 AI 이미지)"""

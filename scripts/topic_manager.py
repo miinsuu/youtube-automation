@@ -195,3 +195,57 @@ def filter_trending_topics(trending_list, video_type):
             continue
         filtered.append(t)
     return filtered
+
+
+# ──────────────────────────────────────────────────
+# 인기 영상 카테고리 분석
+# ──────────────────────────────────────────────────
+_popular_categories_cache = None
+
+
+def analyze_popular_categories(popular_videos):
+    """인기 영상 제목에서 대분류 카테고리 힌트를 추출합니다.
+    
+    Args:
+        popular_videos: list of dict (get_popular_videos() 결과)
+            [{'title': str, 'views': int, 'likes': int}, ...]
+    
+    Returns:
+        str: Gemini 프롬프트에 삽입할 인기 카테고리 컨텍스트 문자열
+    """
+    global _popular_categories_cache
+    
+    if not popular_videos:
+        return ""
+    
+    # 인기 영상 제목에서 참고 데이터 구성
+    lines = []
+    for i, v in enumerate(popular_videos[:15], 1):
+        # 이모지, 해시태그 제거
+        import re
+        title = re.sub(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FAFF]+', '', v['title'])
+        title = re.sub(r'#\S+', '', title).strip()
+        if title:
+            lines.append(f"  {i}. \"{title}\" (조회수 {v['views']:,}, 좋아요 {v['likes']})")
+    
+    if not lines:
+        return ""
+    
+    hint = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[참고: 채널 인기 영상 TOP {len(lines)}]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+아래는 이 채널에서 조회수/좋아요가 높았던 영상입니다.
+이 영상들의 '대분류 카테고리'(예: 심리학, 자기계발, 인간관계, 재테크 등)를 참고하여
+비슷한 카테고리의 새로운 주제를 선정하세요.
+단, 아래 영상의 주제를 그대로 반복하지 마세요. 같은 카테고리의 '새로운' 주제여야 합니다.
+
+{chr(10).join(lines)}
+"""
+    _popular_categories_cache = hint
+    return hint
+
+
+def get_popular_categories_hint():
+    """캐시된 인기 카테고리 힌트 반환 (없으면 빈 문자열)"""
+    return _popular_categories_cache or ""

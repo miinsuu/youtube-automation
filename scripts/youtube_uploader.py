@@ -217,6 +217,80 @@ class YouTubeUploader:
             print(f"⚠️ 채널 영상 목록 조회 실패: {e}")
             return []
 
+    def get_popular_videos(self, top_n=15):
+        """채널 영상의 조회수/좋아요 통계를 가져와 인기 순으로 정렬하여 반환
+
+        Args:
+            top_n: 상위 N개 반환 (기본 15)
+
+        Returns:
+            list of dict: [{'title': str, 'views': int, 'likes': int, 'id': str}, ...]
+        """
+        if not self.youtube:
+            if not self.authenticate():
+                return []
+
+        try:
+            # 채널의 uploads playlist ID 가져오기
+            channel_resp = self.youtube.channels().list(
+                part='contentDetails',
+                mine=True
+            ).execute()
+
+            if not channel_resp.get('items'):
+                print("⚠️ 채널 정보를 가져올 수 없습니다")
+                return []
+
+            uploads_id = channel_resp['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+
+            # 모든 비디오 ID 수집
+            video_ids = []
+            request = self.youtube.playlistItems().list(
+                part='snippet',
+                playlistId=uploads_id,
+                maxResults=50
+            )
+            while request:
+                response = request.execute()
+                for item in response.get('items', []):
+                    video_ids.append(item['snippet']['resourceId']['videoId'])
+                request = self.youtube.playlistItems().list_next(request, response)
+
+            if not video_ids:
+                return []
+
+            # 50개씩 배치로 통계 조회
+            all_stats = []
+            for i in range(0, len(video_ids), 50):
+                batch = video_ids[i:i+50]
+                stats_resp = self.youtube.videos().list(
+                    part='snippet,statistics',
+                    id=','.join(batch)
+                ).execute()
+                for item in stats_resp.get('items', []):
+                    stats = item.get('statistics', {})
+                    snippet = item.get('snippet', {})
+                    all_stats.append({
+                        'id': item['id'],
+                        'title': snippet.get('title', ''),
+                        'views': int(stats.get('viewCount', 0)),
+                        'likes': int(stats.get('likeCount', 0)),
+                    })
+
+            # 조회수 + 좋아요 가중 점수로 정렬 (좋아요 1개 = 조회수 10)
+            all_stats.sort(key=lambda x: x['views'] + x['likes'] * 10, reverse=True)
+            top = all_stats[:top_n]
+
+            print(f"📊 인기 영상 TOP {len(top)} 조회 완료 (총 {len(all_stats)}개 중)")
+            for v in top[:5]:
+                print(f"   {v['views']:>6} views | {v['likes']:>3} likes | {v['title'][:40]}")
+
+            return top
+
+        except Exception as e:
+            print(f"⚠️ 인기 영상 통계 조회 실패: {e}")
+            return []
+
     def upload_video(self, video_path, script_data, thumbnail_path=None,
                      channel_id=None, metadata=None, add_pinned_comment=True,
                      publish_at='', longform_url=''):
