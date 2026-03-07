@@ -11,7 +11,7 @@ import os
 from datetime import datetime
 from topic_manager import (
     pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked,
-    get_popular_categories_hint
+    get_popular_categories_hint, get_existing_titles_for_prompt
 )
 
 try:
@@ -58,12 +58,23 @@ class ScriptGenerator:
 단, 아래 인기 영상의 주제를 그대로 반복하지 말고, 같은 대분류의 '새로운' 주제여야 합니다.
 {category_hint}"""
 
+            # 기존 영상 제목 목록 → Gemini가 중복 회피하도록
+            existing = get_existing_titles_for_prompt()
+            existing_instruction = ""
+            if existing:
+                existing_list = '\n'.join(f'- {t[:45]}' for t in existing[:60])
+                existing_instruction = f"""\n\n⚠️ 중요: 이 채널에 이미 있는 영상 주제/제목 목록입니다.
+아래 목록과 의미적으로 겹치는 주제는 절대 추천하지 마세요.
+예: '자존감' 관련 영상이 있으면 자존감 관련 주제는 추천 금지.
+
+{existing_list}"""
+
             prompt = f"""현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 3개를 추천해주세요.
 
 요구사항:
 - 한국인을 타겟으로 하는 고-조회수 주제만
 - 각 주제는 한 줄씩만 (30자 이내)
-- 반드시 한국어로 작성{category_instruction}
+- 반드시 한국어로 작성{category_instruction}{existing_instruction}
 
 다음 JSON 형식으로만 답변하세요:
 {{"topics":["주제1","주제2","주제3"]}}"""
@@ -162,7 +173,15 @@ class ScriptGenerator:
                 if result:
                     print(f"✅ 쇼츠 데이터 생성 완료: {result.get('title', 'N/A')}")
                     record_topic('shorts', topic, result.get('title', ''))
-                return result
+                    return result
+
+                # 파싱 실패 → 재시도
+                if attempt < max_retries - 1:
+                    print(f"⚠️ 파싱 실패 (시도 {attempt+1}/{max_retries}), 재시도...")
+                    continue
+                else:
+                    print("❌ 스크립트 생성 실패: 모든 재시도 소진")
+                    return None
 
             except Exception as e:
                 err_msg = str(e)
