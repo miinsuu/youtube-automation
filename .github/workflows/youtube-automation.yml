@@ -44,6 +44,7 @@ env:
   UPLOAD_ENABLED: ${{ github.event.inputs.upload || 'true' }}
   VIDEO_COUNT: ${{ github.event.inputs.count || '1' }}
   VIDEO_TYPE: ${{ github.event.inputs.type || 'shorts' }}
+  GH_PAT: ${{ secrets.GH_PAT }}
 
 jobs:
   create-and-upload:
@@ -175,6 +176,8 @@ jobs:
       
       - name: Validate YouTube credentials
         if: env.UPLOAD_ENABLED == 'true'
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           python3 -c "
           import sys
@@ -182,8 +185,7 @@ jobs:
           from youtube_uploader import YouTubeUploader
           u = YouTubeUploader()
           if not u.authenticate():
-              print('::error::YouTube 인증 실패 - YOUTUBE_CREDENTIALS Secret을 업데이트하세요')
-              print('::error::로컬에서: python scripts/youtube_uploader.py  → config/youtube_credentials_L4y1Qbdg.json 내용을 GitHub Secret(YOUTUBE_CREDENTIALS)에 붙여넣기')
+              print('::error::YouTube 인증 실패 - 로컬에서 python scripts/youtube_uploader.py 실행 후 재인증하세요')
               sys.exit(1)
           ch = u.get_authenticated_channel()
           if ch:
@@ -194,6 +196,8 @@ jobs:
           "
 
       - name: Create video
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           PUBLISH_ARG=""
           if [ -n "${{ env.PUBLISH_AT }}" ]; then
@@ -217,6 +221,20 @@ jobs:
             output/longform_images/*.jpg
             logs/*.json
           retention-days: 7
+
+      - name: Auto-renew YouTube credentials Secret
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          CRED_FILE="config/youtube_credentials_L4y1Qbdg.json"
+          if [ -f "$CRED_FILE" ] && [ -n "$GH_TOKEN" ]; then
+            gh secret set YOUTUBE_CREDENTIALS < "$CRED_FILE"
+            echo "✅ GitHub Secret YOUTUBE_CREDENTIALS 자동 갱신 완료"
+          elif [ -z "$GH_TOKEN" ]; then
+            echo "⚠️ GH_PAT Secret이 설정되지 않아 자동 갱신 건너뜀"
+            echo "   GitHub Settings → Secrets → GH_PAT에 Personal Access Token을 추가하세요"
+          fi
 
       - name: Persist topic history to repo
         if: always()

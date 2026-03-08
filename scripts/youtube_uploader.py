@@ -58,6 +58,7 @@ class YouTubeUploader:
             if creds and creds.expired and creds.refresh_token:
                 try:
                     creds.refresh(Request())
+                    print("🔄 액세스 토큰 갱신 성공")
                 except Exception as e:
                     print(f"⚠️ 토큰 갱신 실패: {e}")
                     creds = None  # 재인증 흐름으로 전환
@@ -72,10 +73,8 @@ class YouTubeUploader:
                 # CI/GitHub Actions 환경에서는 브라우저 인증 불가
                 if os.environ.get('GITHUB_ACTIONS') or os.environ.get('CI'):
                     print("❌ OAuth2 토큰이 만료/취소되었습니다. CI 환경에서는 재인증이 불가합니다.")
-                    print("   로컬에서 재인증 후 YOUTUBE_CREDENTIALS 시크릿을 업데이트하세요:")
-                    print("   1) 로컬: python scripts/youtube_uploader.py  (브라우저 인증)")
-                    print("   2) cat config/youtube_credentials_L4y1Qbdg.json")
-                    print("   3) GitHub → Settings → Secrets → YOUTUBE_CREDENTIALS 업데이트")
+                    print("   로컬에서 재인증 후 자동 갱신됩니다:")
+                    print("   python scripts/youtube_uploader.py")
                     return False
                 
                 flow = InstalledAppFlow.from_client_secrets_file(
@@ -84,12 +83,57 @@ class YouTubeUploader:
                 creds = flow.run_local_server(port=0)
             
             # 인증 정보 저장 (JSON 형식)
+            creds_json = creds.to_json()
             with open(self.credentials_file, 'w', encoding='utf-8') as token:
-                token.write(creds.to_json())
+                token.write(creds_json)
+            
+            # CI 환경: GitHub Secret 자동 갱신
+            self._auto_update_github_secret(creds_json)
         
         self.youtube = build('youtube', 'v3', credentials=creds)
         print("✅ YouTube API 인증 완료")
         return True
+    
+    def _auto_update_github_secret(self, creds_json: str):
+        """갱신된 credential을 GitHub Secret에 자동 저장 (CI/로컬 모두 지원)"""
+        import subprocess
+        import shutil
+        
+        if not shutil.which('gh'):
+            if os.environ.get('GITHUB_ACTIONS'):
+                print("⚠️ gh CLI를 찾을 수 없어 Secret 자동 갱신 건너뜀")
+            return
+        
+        gh_pat = os.environ.get('GH_PAT', '')
+        repo = os.environ.get('GITHUB_REPOSITORY', '')
+        
+        # 로컬 환경: GITHUB_REPOSITORY 없으면 gh에서 repo 자동 감지
+        gh_args = ['gh', 'secret', 'set', 'YOUTUBE_CREDENTIALS']
+        if repo:
+            gh_args += ['--repo', repo]
+        
+        env = dict(os.environ)
+        if gh_pat:
+            env['GH_TOKEN'] = gh_pat
+        
+        try:
+            proc = subprocess.run(
+                gh_args,
+                input=creds_json,
+                env=env,
+                capture_output=True, text=True, timeout=30
+            )
+            if proc.returncode == 0:
+                print("✅ GitHub Secret YOUTUBE_CREDENTIALS 자동 갱신 완료")
+            else:
+                stderr = proc.stderr.strip()
+                print(f"⚠️ Secret 자동 갱신 실패: {stderr}")
+                if 'authentication' in stderr.lower() or 'token' in stderr.lower():
+                    print("   GH_PAT Secret에 repo 권한이 있는 PAT를 설정하세요")
+        except subprocess.TimeoutExpired:
+            print("⚠️ Secret 자동 갱신 타임아웃")
+        except Exception as e:
+            print(f"⚠️ Secret 자동 갱신 오류: {e}")
     
     def get_authenticated_channel(self):
         """현재 인증된 YouTube 채널 정보 조회 (기본 채널)"""
@@ -800,6 +844,12 @@ if __name__ == "__main__":
     if uploader.authenticate():
         print("\n✅ YouTube API 연결 성공!")
         print("업로드 준비가 완료되었습니다.")
+        
+        # 로컬 재인증 후 GitHub Secret 자동 업데이트
+        if os.path.exists(uploader.credentials_file):
+            with open(uploader.credentials_file, 'r', encoding='utf-8') as f:
+                creds_json = f.read()
+            uploader._auto_update_github_secret(creds_json)
     else:
         print("\n❌ 인증에 실패했습니다.")
         print("client_secrets.json 파일을 확인해주세요.")
