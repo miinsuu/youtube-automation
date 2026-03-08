@@ -150,25 +150,36 @@ jobs:
           pip install -r requirements.txt
       
       - name: Setup credentials
+        env:
+          YT_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+          YT_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
+          YT_CREDENTIALS_META: ${{ secrets.YOUTUBE_CREDENTIALS_META }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
         run: |
           mkdir -p config
           
-          # YouTube OAuth 인증 파일 생성 (GitHub Secrets에서)
-          echo '${{ secrets.YOUTUBE_CLIENT_SECRETS }}' > config/client_secrets.json
+          # YouTube OAuth 인증 파일 생성 (env 변수에서 안전하게 쓰기)
+          echo "$YT_CLIENT_SECRETS" > config/client_secrets.json
+          echo "$YT_CREDENTIALS" > config/youtube_credentials.json
+          echo "$YT_CREDENTIALS" > config/youtube_credentials_L4y1Qbdg.json
           
-          # 채널 ID에 맞는 인증 파일명 생성 (YouTubeUploader의 네이밍 규칙 일치)
-          echo '${{ secrets.YOUTUBE_CREDENTIALS }}' > config/youtube_credentials.json
-          echo '${{ secrets.YOUTUBE_CREDENTIALS }}' > config/youtube_credentials_L4y1Qbdg.json
+          # 인증 메타데이터 복원 (토큰 만료 추적용)
+          if [ -n "$YT_CREDENTIALS_META" ]; then
+            echo "$YT_CREDENTIALS_META" > config/youtube_credentials_L4y1Qbdg_meta.json
+          fi
           
-          # config.json에 API 키 주입 (Secrets → config.json)
+          # config.json에 API 키 주입 (env → config.json)
           python -c "
-          import json
+          import json, os
           with open('config/config.json', 'r') as f:
               config = json.load(f)
-          config['gemini_api_key'] = '${{ secrets.GEMINI_API_KEY }}'
-          config['huggingface_token'] = '${{ secrets.HUGGINGFACE_TOKEN }}'
-          config['together_api_key'] = '${{ secrets.TOGETHER_API_KEY }}'
-          config['pexels_api_key'] = '${{ secrets.PEXELS_API_KEY }}'
+          config['gemini_api_key'] = os.environ['GEMINI_API_KEY']
+          config['huggingface_token'] = os.environ['HUGGINGFACE_TOKEN']
+          config['together_api_key'] = os.environ['TOGETHER_API_KEY']
+          config['pexels_api_key'] = os.environ['PEXELS_API_KEY']
           config['scheduler']['upload_enabled'] = ('${{ env.UPLOAD_ENABLED }}' == 'true')
           with open('config/config.json', 'w') as f:
               json.dump(config, f, indent=2, ensure_ascii=False)
@@ -228,12 +239,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           CRED_FILE="config/youtube_credentials_L4y1Qbdg.json"
+          META_FILE="config/youtube_credentials_L4y1Qbdg_meta.json"
           if [ -f "$CRED_FILE" ] && [ -n "$GH_TOKEN" ]; then
             gh secret set YOUTUBE_CREDENTIALS < "$CRED_FILE"
             echo "✅ GitHub Secret YOUTUBE_CREDENTIALS 자동 갱신 완료"
+            # 메타파일도 Secret에 저장 (토큰 만료 추적용)
+            if [ -f "$META_FILE" ]; then
+              gh secret set YOUTUBE_CREDENTIALS_META < "$META_FILE"
+              echo "✅ 인증 메타데이터도 갱신 완료"
+            fi
           elif [ -z "$GH_TOKEN" ]; then
             echo "⚠️ GH_PAT Secret이 설정되지 않아 자동 갱신 건너뜀"
-            echo "   GitHub Settings → Secrets → GH_PAT에 Personal Access Token을 추가하세요"
           fi
 
       - name: Persist topic history to repo

@@ -14,6 +14,7 @@ build/
 # Secrets & API Keys (절대 커밋하지 말 것!)
 config/client_secrets.json
 config/youtube_credentials*.json
+config/*_meta.json
 config/config.json.template
 config/config.json.local.bak
 *.json.secret

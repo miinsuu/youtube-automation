@@ -42,6 +42,7 @@ class YouTubeUploader:
     def authenticate(self):
         """YouTube API 인증"""
         creds = None
+        is_browser_auth = False
         
         # 저장된 인증 정보 로드 (JSON 형식)
         if os.path.exists(self.credentials_file):
@@ -61,6 +62,10 @@ class YouTubeUploader:
                     print("🔄 액세스 토큰 갱신 성공")
                 except Exception as e:
                     print(f"⚠️ 토큰 갱신 실패: {e}")
+                    if 'invalid_grant' in str(e):
+                        print("   ℹ️ Testing 모드에서는 7일마다 refresh token이 만료됩니다.")
+                        print("   ⚡ 영구 해결: Google Cloud Console → OAuth 동의 화면 → '앱 게시' 클릭")
+                        print("      (데모 영상 불필요! '앱 게시' 버튼 클릭만으로 7일 제한 해제)")
                     creds = None  # 재인증 흐름으로 전환
             
             if not creds or not creds.valid:
@@ -75,24 +80,67 @@ class YouTubeUploader:
                     print("❌ OAuth2 토큰이 만료/취소되었습니다. CI 환경에서는 재인증이 불가합니다.")
                     print("   로컬에서 재인증 후 자동 갱신됩니다:")
                     print("   python scripts/youtube_uploader.py")
+                    print("")
+                    print("   ⚡ 7일 제한 영구 해제: Google Cloud Console → OAuth 동의 화면 → '앱 게시'")
                     return False
                 
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.client_secrets, self.SCOPES
                 )
                 creds = flow.run_local_server(port=0)
+                is_browser_auth = True
             
             # 인증 정보 저장 (JSON 형식)
             creds_json = creds.to_json()
             with open(self.credentials_file, 'w', encoding='utf-8') as token:
                 token.write(creds_json)
             
-            # CI 환경: GitHub Secret 자동 갱신
+            # 브라우저 재인증 시 인증 시각 기록 (7일 만료 추적용)
+            if is_browser_auth:
+                self._save_auth_timestamp()
+            
+            # GitHub Secret 자동 갱신
             self._auto_update_github_secret(creds_json)
+        
+        # Testing 모드 7일 만료 사전 경고
+        self._check_credential_health()
         
         self.youtube = build('youtube', 'v3', credentials=creds)
         print("✅ YouTube API 인증 완료")
         return True
+    
+    def _get_meta_path(self):
+        return self.credentials_file.replace('.json', '_meta.json')
+    
+    def _save_auth_timestamp(self):
+        """브라우저 인증 시각을 메타파일에 기록"""
+        meta_path = self._get_meta_path()
+        meta = {'authorized_at': datetime.now(timezone.utc).isoformat()}
+        with open(meta_path, 'w', encoding='utf-8') as f:
+            json.dump(meta, f)
+    
+    def _check_credential_health(self):
+        """Testing 모드 7일 만료 사전 경고"""
+        meta_path = self._get_meta_path()
+        if not os.path.exists(meta_path):
+            return
+        try:
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            auth_time = datetime.fromisoformat(meta['authorized_at'])
+            if auth_time.tzinfo is None:
+                auth_time = auth_time.replace(tzinfo=timezone.utc)
+            age = datetime.now(timezone.utc) - auth_time
+            remaining_days = 7 - age.days
+            if remaining_days <= 0:
+                print("🚨 OAuth 토큰 7일 경과 — 재인증 필요할 수 있습니다")
+            elif remaining_days <= 2:
+                print(f"⚠️ OAuth 토큰 만료까지 약 {remaining_days}일 남음 (Testing 모드 7일 제한)")
+                print("   ⚡ 영구 해결: Google Cloud Console → OAuth 동의 화면 → '앱 게시' 클릭")
+            elif remaining_days <= 4:
+                print(f"ℹ️ OAuth 토큰 만료까지 약 {remaining_days}일 남음 (Testing 모드)")
+        except Exception:
+            pass
     
     def _auto_update_github_secret(self, creds_json: str):
         """갱신된 credential을 GitHub Secret에 자동 저장 (CI/로컬 모두 지원)"""
@@ -107,22 +155,22 @@ class YouTubeUploader:
         gh_pat = os.environ.get('GH_PAT', '')
         repo = os.environ.get('GITHUB_REPOSITORY', '')
         
-        # 로컬 환경: GITHUB_REPOSITORY 없으면 gh에서 repo 자동 감지
-        gh_args = ['gh', 'secret', 'set', 'YOUTUBE_CREDENTIALS']
-        if repo:
-            gh_args += ['--repo', repo]
-        
         env = dict(os.environ)
         if gh_pat:
             env['GH_TOKEN'] = gh_pat
         
-        try:
-            proc = subprocess.run(
-                gh_args,
-                input=creds_json,
-                env=env,
+        def _gh_set_secret(name, value):
+            args = ['gh', 'secret', 'set', name]
+            if repo:
+                args += ['--repo', repo]
+            return subprocess.run(
+                args, input=value, env=env,
                 capture_output=True, text=True, timeout=30
             )
+        
+        try:
+            # 1. credential JSON 업로드
+            proc = _gh_set_secret('YOUTUBE_CREDENTIALS', creds_json)
             if proc.returncode == 0:
                 print("✅ GitHub Secret YOUTUBE_CREDENTIALS 자동 갱신 완료")
             else:
@@ -130,6 +178,16 @@ class YouTubeUploader:
                 print(f"⚠️ Secret 자동 갱신 실패: {stderr}")
                 if 'authentication' in stderr.lower() or 'token' in stderr.lower():
                     print("   GH_PAT Secret에 repo 권한이 있는 PAT를 설정하세요")
+                return
+            
+            # 2. 메타파일도 업로드 (만료 추적용)
+            meta_path = self._get_meta_path()
+            if os.path.exists(meta_path):
+                with open(meta_path, 'r', encoding='utf-8') as f:
+                    meta_json = f.read()
+                proc2 = _gh_set_secret('YOUTUBE_CREDENTIALS_META', meta_json)
+                if proc2.returncode == 0:
+                    print("✅ GitHub Secret YOUTUBE_CREDENTIALS_META 자동 갱신 완료")
         except subprocess.TimeoutExpired:
             print("⚠️ Secret 자동 갱신 타임아웃")
         except Exception as e:
@@ -845,7 +903,7 @@ if __name__ == "__main__":
         print("\n✅ YouTube API 연결 성공!")
         print("업로드 준비가 완료되었습니다.")
         
-        # 로컬 재인증 후 GitHub Secret 자동 업데이트
+        # 로컬 재인증 후 GitHub Secret 자동 업데이트 (중복방지: authenticate 내부에서도 실행됨)
         if os.path.exists(uploader.credentials_file):
             with open(uploader.credentials_file, 'r', encoding='utf-8') as f:
                 creds_json = f.read()
