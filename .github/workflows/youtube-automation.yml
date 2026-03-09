@@ -153,7 +153,6 @@ jobs:
         env:
           YT_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
           YT_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
-          YT_CREDENTIALS_META: ${{ secrets.YOUTUBE_CREDENTIALS_META }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
           TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
@@ -165,11 +164,6 @@ jobs:
           echo "$YT_CLIENT_SECRETS" > config/client_secrets.json
           echo "$YT_CREDENTIALS" > config/youtube_credentials.json
           echo "$YT_CREDENTIALS" > config/youtube_credentials_L4y1Qbdg.json
-          
-          # 인증 메타데이터 복원 (토큰 만료 추적용)
-          if [ -n "$YT_CREDENTIALS_META" ]; then
-            echo "$YT_CREDENTIALS_META" > config/youtube_credentials_L4y1Qbdg_meta.json
-          fi
           
           # config.json에 API 키 주입 (env → config.json)
           python -c "
@@ -239,15 +233,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           CRED_FILE="config/youtube_credentials_L4y1Qbdg.json"
-          META_FILE="config/youtube_credentials_L4y1Qbdg_meta.json"
           if [ -f "$CRED_FILE" ] && [ -n "$GH_TOKEN" ]; then
             gh secret set YOUTUBE_CREDENTIALS < "$CRED_FILE"
             echo "✅ GitHub Secret YOUTUBE_CREDENTIALS 자동 갱신 완료"
-            # 메타파일도 Secret에 저장 (토큰 만료 추적용)
-            if [ -f "$META_FILE" ]; then
-              gh secret set YOUTUBE_CREDENTIALS_META < "$META_FILE"
-              echo "✅ 인증 메타데이터도 갱신 완료"
-            fi
           elif [ -z "$GH_TOKEN" ]; then
             echo "⚠️ GH_PAT Secret이 설정되지 않아 자동 갱신 건너뜀"
           fi
