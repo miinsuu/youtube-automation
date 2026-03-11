@@ -99,6 +99,118 @@ def _share_korean_root(word1, word2, min_prefix=2):
     return prefix1 == prefix2
 
 
+# ──────────────────────────────────────────────────
+# 테마 기반 다양성 관리
+# ──────────────────────────────────────────────────
+
+# 주제의 대분류 테마 → 감지 키워드 (부분 문자열 매칭)
+_THEME_KEYWORDS = {
+    "재물금융": ["부자", "가난", "돈", "재테크", "투자", "저축", "월급", "수익",
+                "주식", "코인", "암호화폐", "부동산", "연봉", "거지", "빈곤",
+                "소비", "절약", "금융", "재산", "자산", "경제", "부유"],
+    "습관루틴": ["습관", "루틴"],
+    "자존감심리": ["자존감", "자존심", "심리", "멘탈", "우울", "불안"],
+    "대인관계": ["대인관계", "인맥", "손절", "에너지 뱀파이어"],
+    "대화설득": ["대화법", "말투", "설득", "화법", "거절"],
+    "성공실패": ["성공한 사람", "실패하는 사람", "인생 망치", "인생을 바꾸"],
+    "건강운동": ["건강", "운동", "다이어트", "헬스", "수면", "체중", "살빼"],
+    "뇌과학집중": ["뇌과학", "집중력", "도파민", "뇌가소성", "IQ"],
+    "SNS미디어": ["SNS", "유튜브 수익", "알고리즘"],
+    "내향외향": ["내향", "외향", "MBTI"],
+    "외모인상": ["외모", "첫인상", "관상"],
+    "번아웃스트레스": ["번아웃", "스트레스", "감정 기복"],
+}
+
+# 테마별 최근 영상 허용 횟수 / 확인 윈도우
+_THEME_MAX_RECENT = 3
+_THEME_WINDOW = 15
+
+# 테마 → 사람이 읽을 수 있는 이름
+_THEME_DISPLAY = {
+    "재물금융": "부자/가난/돈/투자/재테크",
+    "습관루틴": "습관/루틴",
+    "자존감심리": "자존감/심리/멘탈",
+    "대인관계": "대인관계/친구/인맥",
+    "대화설득": "대화법/말투/설득",
+    "성공실패": "성공/실패/인생 역전",
+    "건강운동": "건강/운동/다이어트",
+    "뇌과학집중": "뇌과학/집중력/도파민",
+    "SNS미디어": "SNS/유튜브/알고리즘",
+    "내향외향": "내향/외향/MBTI",
+    "외모인상": "외모/첫인상/관상",
+    "번아웃스트레스": "번아웃/스트레스/감정",
+}
+
+
+def _get_topic_themes(text):
+    """텍스트에서 테마 카테고리를 추출 (부분 문자열 매칭)"""
+    themes = set()
+    if not text:
+        return themes
+    for theme, keywords in _THEME_KEYWORDS.items():
+        for kw in keywords:
+            if kw in text:
+                themes.add(theme)
+                break
+    return themes
+
+
+def _get_saturated_themes():
+    """최근 생성 영상에서 과포화된 테마 목록 반환 (로컬 이력 기준)
+
+    Returns:
+        (saturated: set, theme_counts: dict)
+    """
+    history = _load_history()
+    all_entries = []
+    for vtype in history:
+        all_entries.extend(history[vtype])
+    all_entries.sort(key=lambda e: e.get("date", ""), reverse=True)
+    recent = all_entries[:_THEME_WINDOW]
+
+    theme_counts = {}
+    for entry in recent:
+        combined = entry.get("topic", "") + " " + entry.get("title", "")
+        for theme in _get_topic_themes(combined):
+            theme_counts[theme] = theme_counts.get(theme, 0) + 1
+
+    saturated = {theme for theme, count in theme_counts.items()
+                 if count >= _THEME_MAX_RECENT}
+    return saturated, theme_counts
+
+
+def is_theme_saturated(topic):
+    """주제의 테마가 최근 영상에서 과포화되었는지 확인"""
+    topic_themes = _get_topic_themes(topic)
+    if not topic_themes:
+        return False
+    saturated, _ = _get_saturated_themes()
+    overlap = topic_themes & saturated
+    if overlap:
+        names = ", ".join(_THEME_DISPLAY.get(t, t) for t in overlap)
+        print(f"  🎯 테마 포화 제외: {topic[:30]}… (포화 테마: {names})")
+        return True
+    return False
+
+
+def get_saturated_themes_for_prompt():
+    """Gemini 프롬프트에 삽입할 과포화 테마 정보 문자열"""
+    saturated, theme_counts = _get_saturated_themes()
+    if not saturated:
+        return ""
+
+    lines = []
+    for theme in sorted(saturated):
+        name = _THEME_DISPLAY.get(theme, theme)
+        count = theme_counts.get(theme, 0)
+        lines.append(f"  - {name} (최근 {count}회 사용)")
+
+    return ("\n\n🚫 과포화 테마 — 최근 영상에서 너무 자주 다룬 카테고리:\n"
+            + "\n".join(lines)
+            + "\n위 카테고리와 관련된 주제는 절대 추천하지 마세요. "
+            "완전히 다른 카테고리의 참신한 주제만 추천해주세요.")
+
+
 def set_youtube_titles(titles):
     """YouTube 채널 기존 영상 제목을 중복 체크 대상에 등록"""
     global _youtube_titles, _youtube_titles_raw
@@ -191,12 +303,13 @@ def is_topic_blocked(topic):
 def is_topic_duplicate(topic, used_topics):
     """주제가 이미 사용된 주제와 중복(또는 유사)한지 확인 (강화 버전)
 
-    5단계 중복 체크:
+    6단계 중복 체크:
     1. 완전 일치
     2. 부분 문자열 포함
     3. 단어 겹침 비율 (≥40%, 최소 2단어)
     4. 핵심 키워드 교집합
     5. 한국어 어근(접두사) 공유
+    6. 테마 키워드 부분 문자열 교차 매칭 (복합어 내 핵심 키워드 감지)
     """
     topic_clean = topic.strip()
     if not topic_clean:
@@ -227,7 +340,7 @@ def is_topic_duplicate(topic, used_topics):
             if ratio >= 0.4:
                 return True
 
-        # 4. 핵심 키워드 교집합 (새로 추가)
+        # 4. 핵심 키워드 교집합
         used_kw = _extract_keywords(used_clean)
         common_kw = topic_kw & used_kw
         if common_kw:
@@ -240,21 +353,40 @@ def is_topic_duplicate(topic, used_topics):
                 if _share_korean_root(tkw, ukw):
                     return True
 
+        # 6. 테마 키워드 부분 문자열 교차 매칭
+        #    복합어 안에 숨은 핵심 키워드를 감지
+        #    예: "부자되기위한" 안의 "부자" ↔ "부자들의" 안의 "부자"
+        topic_themes = _get_topic_themes(topic_clean)
+        used_themes = _get_topic_themes(used_clean)
+        if len(topic_themes & used_themes) >= 2:
+            return True
+
     return False
 
 
 def pick_unique_topic(topics, video_type, days=9999):
-    """중복되지 않고 사용 가능한 주제를 선택. 없으면 가장 오래된 것 재사용."""
+    """중복되지 않고 사용 가능한 주제를 선택. 테마 포화도 고려."""
     import random
 
     used = get_used_topics(video_type, days=days)
+    saturated_themes, _ = _get_saturated_themes()
 
-    # 1차: 미사용 + 비차단 주제 중 선택
+    # 1차: 미사용 + 비차단 + 테마 미포화 주제 중 선택
     available = [t for t in topics
-                 if not is_topic_duplicate(t, used) and not is_topic_blocked(t)]
+                 if not is_topic_duplicate(t, used)
+                 and not is_topic_blocked(t)
+                 and not (_get_topic_themes(t) & saturated_themes)]
 
     if available:
         choice = random.choice(available)
+        return choice
+
+    # 1.5차: 미사용 + 비차단 (테마 포화 무시)
+    available_no_theme = [t for t in topics
+                          if not is_topic_duplicate(t, used) and not is_topic_blocked(t)]
+    if available_no_theme:
+        choice = random.choice(available_no_theme)
+        print(f"  ⚠️ 테마 포화 무시하고 선택: {choice[:30]}")
         return choice
 
     # 2차: 로컬 이력 무시하고 YouTube 채널 영상에만 없으면 허용
@@ -288,8 +420,9 @@ def pick_unique_topic(topics, video_type, days=9999):
 
 
 def filter_trending_topics(trending_list, video_type):
-    """트렌딩 주제 목록에서 차단/중복 제거 (전체 이력 + 전체 YouTube 채널 기준)"""
+    """트렌딩 주제 목록에서 차단/중복/테마포화 제거"""
     used = get_used_topics(video_type)  # days=9999 (전체)
+    saturated_themes, _ = _get_saturated_themes()
     filtered = []
     for t in trending_list:
         if is_topic_blocked(t):
@@ -297,6 +430,11 @@ def filter_trending_topics(trending_list, video_type):
             continue
         if is_topic_duplicate(t, used):
             print(f"  🔄 중복 주제 제외: {t}")
+            continue
+        topic_themes = _get_topic_themes(t)
+        if topic_themes & saturated_themes:
+            names = ", ".join(_THEME_DISPLAY.get(th, th) for th in (topic_themes & saturated_themes))
+            print(f"  🎯 테마 포화 제외: {t} ({names})")
             continue
         filtered.append(t)
     return filtered

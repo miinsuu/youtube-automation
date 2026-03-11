@@ -11,7 +11,8 @@ import os
 from datetime import datetime
 from topic_manager import (
     pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked,
-    get_popular_categories_hint, get_existing_titles_for_prompt
+    get_popular_categories_hint, get_existing_titles_for_prompt,
+    get_saturated_themes_for_prompt
 )
 
 try:
@@ -74,7 +75,9 @@ class ScriptGenerator:
 요구사항:
 - 한국인을 타겟으로 하는 고-조회수 주제만
 - 각 주제는 한 줄씩만 (30자 이내)
-- 반드시 한국어로 작성{category_instruction}{existing_instruction}
+- 반드시 한국어로 작성
+- 구독자가 '오, 이건 새로운 콘텐츠다!' 하고 느낄 만큼 참신하고 호기심을 자극하는 주제
+- 아래 기존 영상과 의미적으로 겹치는 주제는 절대 안 됨{category_instruction}{existing_instruction}{get_saturated_themes_for_prompt()}
 
 다음 JSON 형식으로만 답변하세요:
 {{"topics":["주제1","주제2","주제3"]}}"""
