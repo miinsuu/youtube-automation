@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 
 
 HISTORY_FILE = "logs/topic_history.json"
+LEARNED_TOPICS_FILE = "logs/learned_topics.json"
+PERFORMANCE_FILE = "logs/seed_performance.json"
 
 # 의미없는/저품질 주제 필터링 키워드
 BLOCKED_KEYWORDS = [
@@ -615,3 +617,145 @@ def analyze_popular_categories(popular_videos):
 def get_popular_categories_hint():
     """캐시된 인기 카테고리 힌트 반환 (없으면 빈 문자열)"""
     return _popular_categories_cache or ""
+
+
+# ──────────────────────────────────────────────────
+# 학습 루프: Gemini가 생성한 좋은 주제를 자동 저장
+# ──────────────────────────────────────────────────
+
+def _load_learned_topics():
+    """학습된 주제 풀 로드"""
+    if not os.path.exists(LEARNED_TOPICS_FILE):
+        return {"shorts": [], "longform": []}
+    try:
+        with open(LEARNED_TOPICS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {"shorts": [], "longform": []}
+
+
+def _save_learned_topics(data):
+    """학습된 주제 풀 저장"""
+    os.makedirs(os.path.dirname(LEARNED_TOPICS_FILE), exist_ok=True)
+    with open(LEARNED_TOPICS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def learn_topic(video_type, topic):
+    """Gemini가 생성해서 실제 사용된 주제를 학습 풀에 저장.
+    중복 없이 최대 500개까지 보관 (오래된 것부터 제거)."""
+    data = _load_learned_topics()
+    if video_type not in data:
+        data[video_type] = []
+
+    # 이미 존재하면 스킵
+    existing = {t.get("topic", "") for t in data[video_type]}
+    if topic in existing:
+        return
+
+    data[video_type].append({
+        "topic": topic,
+        "added": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "source": "gemini"
+    })
+
+    # 최대 500개 유지
+    if len(data[video_type]) > 500:
+        data[video_type] = data[video_type][-500:]
+
+    _save_learned_topics(data)
+
+
+def get_learned_topics(video_type):
+    """학습된 주제 목록을 반환 (고정 주제 풀의 확장용)"""
+    data = _load_learned_topics()
+    return [t.get("topic", "") for t in data.get(video_type, []) if t.get("topic")]
+
+
+# ──────────────────────────────────────────────────
+# 조회수 데이터 기반 시드 카테고리 성과 추적
+# ──────────────────────────────────────────────────
+
+def _load_performance():
+    """시드 카테고리 성과 데이터 로드"""
+    if not os.path.exists(PERFORMANCE_FILE):
+        return {"theme_stats": {}, "last_updated": ""}
+    try:
+        with open(PERFORMANCE_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {"theme_stats": {}, "last_updated": ""}
+
+
+def _save_performance(data):
+    """시드 카테고리 성과 데이터 저장"""
+    os.makedirs(os.path.dirname(PERFORMANCE_FILE), exist_ok=True)
+    with open(PERFORMANCE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def update_seed_performance(popular_videos):
+    """인기 영상 통계를 분석하여 어떤 테마/시드 카테고리가 고성과인지 추적.
+
+    Args:
+        popular_videos: list of dict [{'title': str, 'views': int, 'likes': int, 'id': str}, ...]
+    """
+    if not popular_videos:
+        return
+
+    perf = _load_performance()
+    stats = perf.get("theme_stats", {})
+
+    for video in popular_videos:
+        title = video.get("title", "")
+        views = video.get("views", 0)
+        likes = video.get("likes", 0)
+        score = views + likes * 10
+
+        themes = _get_topic_themes(title)
+        for theme in themes:
+            if theme not in stats:
+                stats[theme] = {"total_score": 0, "video_count": 0, "avg_score": 0}
+            s = stats[theme]
+            s["total_score"] += score
+            s["video_count"] += 1
+            s["avg_score"] = s["total_score"] // max(s["video_count"], 1)
+
+    perf["theme_stats"] = stats
+    perf["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    _save_performance(perf)
+
+
+def get_high_performing_themes(top_n=5):
+    """고성과 테마 목록 반환 (평균 점수 상위 N개)"""
+    perf = _load_performance()
+    stats = perf.get("theme_stats", {})
+    if not stats:
+        return []
+
+    # 최소 2개 이상 영상이 있는 테마만
+    qualified = {k: v for k, v in stats.items() if v.get("video_count", 0) >= 2}
+    if not qualified:
+        return []
+
+    sorted_themes = sorted(qualified.items(), key=lambda x: x[1]["avg_score"], reverse=True)
+    return sorted_themes[:top_n]
+
+
+def get_performance_hint_for_prompt():
+    """Gemini 프롬프트에 삽입할 고성과 테마 힌트"""
+    top_themes = get_high_performing_themes(top_n=3)
+    if not top_themes:
+        return ""
+
+    lines = []
+    for theme, stats in top_themes:
+        display = _THEME_DISPLAY.get(theme, theme)
+        avg = stats["avg_score"]
+        count = stats["video_count"]
+        lines.append(f"  - {display} (평균 성과 점수: {avg:,}, 영상 {count}개)")
+
+    return ("\n\n📈 고성과 카테고리 참고 (이 채널에서 조회수가 높은 분야):\n"
+            + "\n".join(lines)
+            + "\n이 카테고리와 관련된 새로운 주제를 우선 고려하되, "
+            "과포화 테마와 겹치지 않는 범위에서만 참고하세요.")

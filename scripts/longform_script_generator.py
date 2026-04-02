@@ -10,7 +10,8 @@ import re
 import time
 from datetime import datetime
 from topic_manager import (
-    pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked
+    pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked,
+    learn_topic, get_learned_topics
 )
 
 try:
@@ -84,15 +85,16 @@ class LongformScriptGenerator:
                     filtered = filter_trending_topics(trending, 'longform')
                     if filtered:
                         topic = random.choice(filtered)
+                        learn_topic('longform', topic)
                         print(f"✅ 트렌디한 주제 선택: {topic}")
                     else:
-                        topic = pick_unique_topic(self.topics, 'longform')
+                        topic = pick_unique_topic(self.topics + get_learned_topics('longform'), 'longform')
                         print(f"📌 고정 주제 선택 (트렌딩 중복): {topic}")
                 else:
-                    topic = pick_unique_topic(self.topics, 'longform')
+                    topic = pick_unique_topic(self.topics + get_learned_topics('longform'), 'longform')
                     print(f"📌 고정 주제 선택: {topic}")
             else:
-                topic = pick_unique_topic(self.topics, 'longform')
+                topic = pick_unique_topic(self.topics + get_learned_topics('longform'), 'longform')
                 print(f"📌 고정 주제 선택: {topic}")
         
         print(f"\n📚 롱폼 스크립트 생성 중: {topic}")

@@ -12,7 +12,8 @@ from datetime import datetime
 from topic_manager import (
     pick_unique_topic, record_topic, filter_trending_topics, is_topic_blocked,
     get_popular_categories_hint, get_existing_titles_for_prompt,
-    get_saturated_themes_for_prompt, get_seed_category_hint
+    get_saturated_themes_for_prompt, get_seed_category_hint,
+    learn_topic, get_learned_topics, get_performance_hint_for_prompt
 )
 
 try:
@@ -73,6 +74,9 @@ class ScriptGenerator:
             # 시드 카테고리 + 관점 힌트 (매번 랜덤)
             seed_hint = get_seed_category_hint()
 
+            # 고성과 테마 힌트 (조회수 데이터 기반)
+            perf_hint = get_performance_hint_for_prompt()
+
             prompt = f"""현재 유튜브 쇼츠에서 조회수와 구독이 잘 나오는 한국 주제 5개를 추천해주세요.
 
 요구사항:
@@ -84,7 +88,7 @@ class ScriptGenerator:
 - '자기계발', '부자/돈', '습관', '대인관계', '자존감' 같은 진부한 자기계발 주제는 최대 1개까지만 허용
 - 과학, 역사, 문화, 동물, 미스터리, 인체, 음식, 기술, 우주, 심리실험 등 다양한 분야에서 선정
 - '알쓸신잡' 스타일의 지적 호기심을 자극하는 팩트 기반 주제 선호
-- 아래 기존 영상과 의미적으로 겹치는 주제는 절대 안 됨{seed_hint}{category_instruction}{existing_instruction}{get_saturated_themes_for_prompt()}
+- 아래 기존 영상과 의미적으로 겹치는 주제는 절대 안 됨{seed_hint}{perf_hint}{category_instruction}{existing_instruction}{get_saturated_themes_for_prompt()}
 
 다음 JSON 형식으로만 답변하세요:
 {{"topics":["주제1","주제2","주제3","주제4","주제5"]}}"""
@@ -127,9 +131,10 @@ class ScriptGenerator:
                 filtered = filter_trending_topics(trending, 'shorts')
                 if filtered:
                     topic = random.choice(filtered)
+                    learn_topic('shorts', topic)
                     print(f"✅ 공유 트렌디 주제 선택: {topic}")
                     return topic
-        topic = pick_unique_topic(self.topics, 'shorts')
+        topic = pick_unique_topic(self.topics + get_learned_topics('shorts'), 'shorts')
         print(f"📌 공유 고정 주제 선택: {topic}")
         return topic
 
@@ -161,15 +166,16 @@ class ScriptGenerator:
                     filtered = filter_trending_topics(trending, 'shorts')
                     if filtered:
                         topic = random.choice(filtered)
+                        learn_topic('shorts', topic)  # 학습 루프: 사용된 트렌딩 주제 저장
                         print(f"✅ 트렌디한 주제 선택: {topic}")
                     else:
-                        topic = pick_unique_topic(self.topics, 'shorts')
+                        topic = pick_unique_topic(self.topics + get_learned_topics('shorts'), 'shorts')
                         print(f"📌 고정 주제 선택 (트렌딩 중복): {topic}")
                 else:
-                    topic = pick_unique_topic(self.topics, 'shorts')
+                    topic = pick_unique_topic(self.topics + get_learned_topics('shorts'), 'shorts')
                     print(f"📌 고정 주제 선택: {topic}")
             else:
-                topic = pick_unique_topic(self.topics, 'shorts')
+                topic = pick_unique_topic(self.topics + get_learned_topics('shorts'), 'shorts')
                 print(f"📌 고정 주제 선택: {topic}")
 
         prompt = self._build_prompt(topic, paired_with_longform=paired_with_longform)

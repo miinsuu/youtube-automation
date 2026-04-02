@@ -65,11 +65,12 @@ class YouTubeAutomation:
     def _sync_popular_categories(self):
         """인기 영상 통계를 분석하여 주제 선정에 반영"""
         try:
-            from topic_manager import analyze_popular_categories
+            from topic_manager import analyze_popular_categories, update_seed_performance
             popular = self.uploader.get_popular_videos(top_n=15)
             if popular:
                 analyze_popular_categories(popular)
-                print(f"✅ 인기 영상 카테고리 분석 완료 (TOP {len(popular)})")
+                update_seed_performance(popular)
+                print(f"✅ 인기 영상 카테고리 분석 + 성과 추적 완료 (TOP {len(popular)})")
         except Exception as e:
             print(f"⚠️ 인기 영상 분석 건너뜀: {e}")
     
