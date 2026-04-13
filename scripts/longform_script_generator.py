@@ -55,7 +55,7 @@ class LongformScriptGenerator:
 다음 JSON 형식으로만 답변하세요:
 {"topics":["주제1","주제2","주제3"]}"""
 
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt, request_options={"timeout": 60})
             content = response.text.strip()
 
             json_match = re.search(r'\{[^{}]*"topics"[^{}]*\}', content)
@@ -111,12 +111,16 @@ class LongformScriptGenerator:
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    response = self.model.generate_content(prompt)
+                    response = self.model.generate_content(prompt, request_options={"timeout": 120})
                     script_text = response.text
                     break
                 except Exception as e:
                     err_msg = str(e)
-                    if attempt < max_retries - 1 and ('500' in err_msg or 'internal' in err_msg.lower() or 'unavailable' in err_msg.lower()):
+                    is_retriable = ('500' in err_msg or '503' in err_msg
+                                    or 'internal' in err_msg.lower()
+                                    or 'unavailable' in err_msg.lower()
+                                    or 'timeout' in err_msg.lower())
+                    if attempt < max_retries - 1 and is_retriable:
                         wait = (attempt + 1) * 5
                         print(f"⚠️ Gemini API 오류 (시도 {attempt+1}/{max_retries}): {err_msg[:100]}")
                         print(f"🔄 {wait}초 후 재시도...")
@@ -325,11 +329,15 @@ YouTube 롱폼 비디오(10-15분, 약 2000-2500단어)를 위한 깊이 있는 
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = self.model.generate_content(prompt)
+                response = self.model.generate_content(prompt, request_options={"timeout": 60})
                 return self._parse_metadata(response.text, script_data)
             except Exception as e:
                 err_msg = str(e)
-                if attempt < max_retries - 1 and ('500' in err_msg or 'internal' in err_msg.lower() or 'unavailable' in err_msg.lower()):
+                is_retriable = ('500' in err_msg or '503' in err_msg
+                                or 'internal' in err_msg.lower()
+                                or 'unavailable' in err_msg.lower()
+                                or 'timeout' in err_msg.lower())
+                if attempt < max_retries - 1 and is_retriable:
                     wait = (attempt + 1) * 5
                     print(f"⚠️ Gemini API 오류 (시도 {attempt+1}/{max_retries}): {err_msg[:100]}")
                     print(f"🔄 {wait}초 후 재시도...")

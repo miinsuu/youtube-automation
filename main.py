@@ -152,23 +152,37 @@ class YouTubeAutomation:
             if target_channel_id and current_channel and current_channel['id'] != target_channel_id:
                 print(f"⚠️  주의: 대상 채널({target_channel_id})이 현재 로그인 채널과 다릅니다!")
 
-            # 구조화 메타데이터 전달 (제목, 설명, 해시태그, 고정댓글 포함)
-            upload_result = self.uploader.upload_video(
-                video_path,
-                script_data,
-                thumbnail_path=thumbnail_path,
-                channel_id=target_channel_id,
-                metadata=script_data,
-                add_pinned_comment=True,
-                publish_at=publish_at,
-                longform_url=longform_url
-            )
+            # 파이프라인 레벨 재시도 (업로드 실패 시 최대 2회 추가 시도)
+            upload_result = None
+            for upload_attempt in range(3):
+                upload_result = self.uploader.upload_video(
+                    video_path,
+                    script_data,
+                    thumbnail_path=thumbnail_path,
+                    channel_id=target_channel_id,
+                    metadata=script_data,
+                    add_pinned_comment=True,
+                    publish_at=publish_at,
+                    longform_url=longform_url
+                )
+                if upload_result:
+                    break
+                if upload_attempt < 2:
+                    import time
+                    wait = 30 * (upload_attempt + 1)
+                    print(f"\n🔄 업로드 재시도 ({upload_attempt+1}/2), {wait}초 대기...")
+                    time.sleep(wait)
+                    # API 클라이언트 재생성
+                    self.uploader.youtube = None
+                    self.uploader.authenticate()
+
             if upload_result:
                 result['upload'] = upload_result
                 print(f"\n🎉 모든 작업 완료!")
                 print(f"📺 YouTube URL: {upload_result['url']}")
             else:
-                print("\n⚠️  비디오는 생성되었지만 업로드에 실패했습니다.")
+                print("\n❌ 비디오는 생성되었지만 업로드에 실패했습니다.")
+                result['upload_failed'] = True
         else:
             print("\n[5/6] ⏭️  업로드 건너뛰기")
             print(f"\n✅ 비디오 생성 완료: {video_path}")
@@ -300,22 +314,34 @@ class YouTubeAutomation:
         if upload and self.config['upload']['longform'].get('auto_upload', True):
             print("\n[6/7] 📤 YouTube 업로드 중...")
             
-            # 롱폼 비디오 업로드 (Gemini 생성 메타데이터 + 썸네일)
-            upload_result = self.uploader.upload_longform_video(
-                video_path,
-                script_data,
-                thumbnail_path=thumbnail_path if thumb else None,
-                add_pinned_comment=True,
-                metadata=metadata,
-                publish_at=publish_at
-            )
-            
+            # 파이프라인 레벨 재시도 (업로드 실패 시 최대 2회 추가 시도)
+            upload_result = None
+            for upload_attempt in range(3):
+                upload_result = self.uploader.upload_longform_video(
+                    video_path,
+                    script_data,
+                    thumbnail_path=thumbnail_path if thumb else None,
+                    add_pinned_comment=True,
+                    metadata=metadata,
+                    publish_at=publish_at
+                )
+                if upload_result:
+                    break
+                if upload_attempt < 2:
+                    import time
+                    wait = 30 * (upload_attempt + 1)
+                    print(f"\n🔄 업로드 재시도 ({upload_attempt+1}/2), {wait}초 대기...")
+                    time.sleep(wait)
+                    self.uploader.youtube = None
+                    self.uploader.authenticate()
+
             if upload_result:
                 result['upload'] = upload_result
                 print(f"\n🎉 모든 작업 완료!")
                 print(f"📺 YouTube URL: {upload_result['url']}")
             else:
-                print("\n⚠️  비디오는 생성되었지만 업로드에 실패했습니다.")
+                print("\n❌ 비디오는 생성되었지만 업로드에 실패했습니다.")
+                result['upload_failed'] = True
         else:
             print("\n[6/7] ⏭️  업로드 건너뛰기")
             print(f"\n✅ 비디오 생성 완료: {video_path}")
@@ -345,17 +371,26 @@ def main():
     # 업로드 여부
     upload = not args.no_upload and not args.test
     
-    # 비디오 타입에 따라 생성
+    # 비디오 타입에 따라 생성 + 실패 시 exit(1)으로 CI에 알림
     publish_at = args.publish_at
+    has_failure = False
     
     if args.type == 'shorts':
         if args.count == 1:
-            automation.create_video(topic=args.topic, upload=upload, publish_at=publish_at)
+            result = automation.create_video(topic=args.topic, upload=upload, publish_at=publish_at)
+            if upload and (not result or result.get('upload_failed')):
+                has_failure = True
         else:
-            automation.batch_create(count=args.count, upload=upload, publish_at=publish_at)
+            results = automation.batch_create(count=args.count, upload=upload, publish_at=publish_at)
+            if upload and len(results) < args.count:
+                has_failure = True
+            if upload and any(r.get('upload_failed') for r in results):
+                has_failure = True
     
     elif args.type == 'longform':
-        automation.create_longform_video(topic=args.topic, upload=upload, publish_at=publish_at)
+        result = automation.create_longform_video(topic=args.topic, upload=upload, publish_at=publish_at)
+        if upload and (not result or result.get('upload_failed')):
+            has_failure = True
     
     elif args.type == 'both':
         print("🎥 쇼츠 + 롱폼 동일 주제 연동 생성\n")
@@ -376,16 +411,25 @@ def main():
             print(f"\n✅ 롱폼 URL 확보: {longform_url}")
         else:
             print("\n⚠️ 롱폼 URL 미확보 — 쇼츠 단독 모드로 진행")
+            if upload and longform_result and longform_result.get('upload_failed'):
+                has_failure = True
         
         import time
         time.sleep(5)
         
         # 3. 쇼츠 생성 (롱폼 링크 포함)
         print("\n2️⃣  쇼츠 생성 중 (롱폼 연동)...")
-        automation.create_video(
+        shorts_result = automation.create_video(
             topic=topic, upload=upload, publish_at=publish_at,
             longform_url=longform_url
         )
+        if upload and (not shorts_result or shorts_result.get('upload_failed')):
+            has_failure = True
+    
+    # CI/CD 환경에서 업로드 실패 시 비정상 종료 (GitHub Actions에서 실패로 표시)
+    if has_failure:
+        print("\n🚨 업로드 실패가 감지되었습니다!")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

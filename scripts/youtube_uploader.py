@@ -5,12 +5,24 @@ Google YouTube Data API v3를 사용하여 영상을 자동으로 업로드합�
 
 import json
 import os
+import time
 from datetime import datetime, timezone, timedelta
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+
+
+# 재시도 가능한 HTTP 상태 코드 (일시적 오류)
+_RETRIABLE_STATUS_CODES = {500, 502, 503, 504}
+# 재시도 가능한 예외 (네트워크 일시 오류)
+_RETRIABLE_EXCEPTIONS = (
+    IOError,
+    ConnectionError,
+    ConnectionResetError,
+    BrokenPipeError,
+)
 
 
 class YouTubeUploader:
@@ -492,10 +504,10 @@ class YouTubeUploader:
             if scheduled_publish_at:
                 print(f"⏰ 예약 공개 예정: {scheduled_publish_at} (댓글 추가 후 전환)")
 
-            # 미디어 파일 업로드
+            # 미디어 파일 업로드 (재시도 로직 포함)
             media = MediaFileUpload(
                 video_path,
-                chunksize=-1,
+                chunksize=10 * 1024 * 1024,  # 10MB 청크 (재시도 가능하게)
                 resumable=True
             )
 
@@ -508,10 +520,31 @@ class YouTubeUploader:
             )
 
             response = None
+            upload_retries = 0
+            max_upload_retries = 5
             while response is None:
-                status, response = request.next_chunk()
-                if status:
-                    print(f"   업로드 진행: {int(status.progress() * 100)}%")
+                try:
+                    status, response = request.next_chunk()
+                    if status:
+                        print(f"   업로드 진행: {int(status.progress() * 100)}%")
+                    upload_retries = 0  # 성공하면 카운터 리셋
+                except Exception as chunk_error:
+                    error_str = str(chunk_error)
+                    is_retriable = (
+                        isinstance(chunk_error, _RETRIABLE_EXCEPTIONS)
+                        or any(str(code) in error_str for code in _RETRIABLE_STATUS_CODES)
+                        or 'ssl' in error_str.lower()
+                        or 'timeout' in error_str.lower()
+                        or 'broken pipe' in error_str.lower()
+                    )
+                    if is_retriable and upload_retries < max_upload_retries:
+                        upload_retries += 1
+                        wait = min(10 * (2 ** (upload_retries - 1)), 120)
+                        print(f"   ⚠️ 업로드 일시 오류, {wait}초 후 재시도 ({upload_retries}/{max_upload_retries}): {error_str[:100]}")
+                        time.sleep(wait)
+                        continue
+                    else:
+                        raise
 
             video_id = response['id']
             video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -600,52 +633,61 @@ class YouTubeUploader:
         }
     
     def add_pinned_comment(self, video_id, comment_text):
-        """고정 댓글 추가"""
-        try:
-            if not self.youtube:
-                if not self.authenticate():
-                    return None
-            
-            # 댓글 삽입
-            request = self.youtube.commentThreads().insert(
-                part='snippet',
-                body={
-                    'snippet': {
-                        'videoId': video_id,
-                        'topLevelComment': {
-                            'snippet': {
-                                'textOriginal': comment_text
+        """고정 댓글 추가 (재시도 포함)"""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if not self.youtube:
+                    if not self.authenticate():
+                        return None
+                
+                # 댓글 삽입
+                request = self.youtube.commentThreads().insert(
+                    part='snippet',
+                    body={
+                        'snippet': {
+                            'videoId': video_id,
+                            'topLevelComment': {
+                                'snippet': {
+                                    'textOriginal': comment_text
+                                }
                             }
                         }
                     }
-                }
-            )
+                )
+                
+                response = request.execute()
+                comment_id = response['id']
+                print(f"✅ 댓글 추가 완료: {comment_id}")
             
-            response = request.execute()
-            comment_id = response['id']
-            print(f"✅ 댓글 추가 완료: {comment_id}")
-            
-            # 댓글 고정 (채널 소유자만 가능)
-            try:
-                self.youtube.commentThreads().update(
-                    part='snippet',
-                    body={
-                        'id': comment_id,
-                        'snippet': {
-                            'canPin': True,
-                            'isPublic': True
+                # 댓글 고정 (채널 소유자만 가능)
+                try:
+                    self.youtube.commentThreads().update(
+                        part='snippet',
+                        body={
+                            'id': comment_id,
+                            'snippet': {
+                                'canPin': True,
+                                'isPublic': True
+                            }
                         }
-                    }
-                ).execute()
-                print(f"✅ 댓글 고정 완료")
-            except:
-                print(f"ℹ️  댓글 고정은 수동으로 진행해주세요 (채널에서 직접 고정 가능)")
+                    ).execute()
+                    print(f"✅ 댓글 고정 완료")
+                except:
+                    print(f"ℹ️  댓글 고정은 수동으로 진행해주세요 (채널에서 직접 고정 가능)")
+                
+                return comment_id
             
-            return comment_id
-        
-        except Exception as e:
-            print(f"⚠️  댓글 추가 실패: {e}")
-            return None
+            except Exception as e:
+                error_str = str(e)
+                is_retriable = any(str(code) in error_str for code in _RETRIABLE_STATUS_CODES)
+                if is_retriable and attempt < max_retries - 1:
+                    wait = 10 * (attempt + 1)
+                    print(f"⚠️  댓글 추가 실패 ({error_str[:80]}), {wait}초 후 재시도...")
+                    time.sleep(wait)
+                    continue
+                print(f"⚠️  댓글 추가 실패: {e}")
+                return None
     
     def upload_longform_video(self, video_path, script_data, thumbnail_path=None,
                               add_pinned_comment=True, metadata=None, publish_at=''):
@@ -716,10 +758,10 @@ class YouTubeUploader:
             if scheduled_publish_at:
                 print(f"⏰ 예약 공개 예정: {scheduled_publish_at} (댓글 추가 후 전환)")
             
-            # 미디어 파일 업로드
+            # 미디어 파일 업로드 (재시도 로직 포함)
             media = MediaFileUpload(
                 video_path,
-                chunksize=-1,
+                chunksize=10 * 1024 * 1024,  # 10MB 청크 (재시도 가능하게)
                 resumable=True
             )
             
@@ -735,10 +777,31 @@ class YouTubeUploader:
             )
             
             response = None
+            upload_retries = 0
+            max_upload_retries = 5
             while response is None:
-                status, response = request.next_chunk()
-                if status:
-                    print(f"   업로드 진행: {int(status.progress() * 100)}%")
+                try:
+                    status, response = request.next_chunk()
+                    if status:
+                        print(f"   업로드 진행: {int(status.progress() * 100)}%")
+                    upload_retries = 0
+                except Exception as chunk_error:
+                    error_str = str(chunk_error)
+                    is_retriable = (
+                        isinstance(chunk_error, _RETRIABLE_EXCEPTIONS)
+                        or any(str(code) in error_str for code in _RETRIABLE_STATUS_CODES)
+                        or 'ssl' in error_str.lower()
+                        or 'timeout' in error_str.lower()
+                        or 'broken pipe' in error_str.lower()
+                    )
+                    if is_retriable and upload_retries < max_upload_retries:
+                        upload_retries += 1
+                        wait = min(10 * (2 ** (upload_retries - 1)), 120)
+                        print(f"   ⚠️ 업로드 일시 오류, {wait}초 후 재시도 ({upload_retries}/{max_upload_retries}): {error_str[:100]}")
+                        time.sleep(wait)
+                        continue
+                    else:
+                        raise
             
             video_id = response['id']
             video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -773,25 +836,34 @@ class YouTubeUploader:
             return None
 
     def _set_scheduled_publish(self, video_id, publish_at):
-        """업로드 완료 후 예약 공개로 전환 (unlisted → private + publishAt)"""
-        try:
-            self.youtube.videos().update(
-                part='status',
-                body={
-                    'id': video_id,
-                    'status': {
-                        'privacyStatus': 'private',
-                        'publishAt': publish_at,
-                        'selfDeclaredMadeForKids': False
+        """업로드 완료 후 예약 공개로 전환 (unlisted → private + publishAt, 재시도 포함)"""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.youtube.videos().update(
+                    part='status',
+                    body={
+                        'id': video_id,
+                        'status': {
+                            'privacyStatus': 'private',
+                            'publishAt': publish_at,
+                            'selfDeclaredMadeForKids': False
+                        }
                     }
-                }
-            ).execute()
-            print(f"✅ 예약 공개 전환 완료: {publish_at}")
-            return True
-        except Exception as e:
-            print(f"⚠️  예약 공개 전환 실패: {e}")
-            print(f"   비디오가 unlisted 상태로 남아있습니다. YouTube Studio에서 수동 설정하세요.")
-            return False
+                ).execute()
+                print(f"✅ 예약 공개 전환 완료: {publish_at}")
+                return True
+            except Exception as e:
+                error_str = str(e)
+                is_retriable = any(str(code) in error_str for code in _RETRIABLE_STATUS_CODES)
+                if is_retriable and attempt < max_retries - 1:
+                    wait = 10 * (attempt + 1)
+                    print(f"⚠️  예약 공개 전환 오류, {wait}초 후 재시도 ({attempt+1}/{max_retries}): {error_str[:80]}")
+                    time.sleep(wait)
+                    continue
+                print(f"⚠️  예약 공개 전환 실패: {e}")
+                print(f"   비디오가 unlisted 상태로 남아있습니다. YouTube Studio에서 수동 설정하세요.")
+                return False
 
     def _validate_publish_at(self, publish_at):
         """예약 공개 시간 검증 — 이미 지났거나 5분 이내면 즉시 공개로 전환"""

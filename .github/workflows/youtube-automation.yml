@@ -49,6 +49,7 @@ env:
 jobs:
   create-and-upload:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # 30분 초과 시 강제 종료 (무한 행 방지)
     permissions:
       contents: write
     

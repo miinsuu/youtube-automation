@@ -93,7 +93,7 @@ class ScriptGenerator:
 다음 JSON 형식으로만 답변하세요:
 {{"topics":["주제1","주제2","주제3","주제4","주제5"]}}"""
 
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt, request_options={"timeout": 60})
             content = response.text.strip()
 
             json_match = re.search(r'\{[^{}]*"topics"[^{}]*\}', content)
@@ -183,7 +183,7 @@ class ScriptGenerator:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                response = self.model.generate_content(prompt)
+                response = self.model.generate_content(prompt, request_options={"timeout": 60})
                 raw = response.text.strip()
                 result = self._parse_response(raw, topic)
                 if result:
@@ -201,7 +201,11 @@ class ScriptGenerator:
 
             except Exception as e:
                 err_msg = str(e)
-                if attempt < max_retries - 1 and ('500' in err_msg or 'internal' in err_msg.lower() or 'unavailable' in err_msg.lower()):
+                is_retriable = ('500' in err_msg or '503' in err_msg
+                                or 'internal' in err_msg.lower()
+                                or 'unavailable' in err_msg.lower()
+                                or 'timeout' in err_msg.lower())
+                if attempt < max_retries - 1 and is_retriable:
                     import time
                     wait = (attempt + 1) * 5
                     print(f"⚠️ Gemini API 오류 (시도 {attempt+1}/{max_retries}): {err_msg[:100]}")
