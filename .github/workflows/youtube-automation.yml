@@ -39,6 +39,20 @@ on:
         options:
           - 'true'
           - 'false'
+      schedule_delay:
+        description: 'Upload delay (publish after N time from now)'
+        required: false
+        default: 'immediate'
+        type: choice
+        options:
+          - 'immediate'
+          - '30min'
+          - '1hour'
+          - '2hour'
+          - '3hour'
+          - '4hour'
+          - '5hour'
+          - '6hour'
 
 env:
   UPLOAD_ENABLED: ${{ github.event.inputs.upload || 'true' }}
@@ -58,9 +72,35 @@ jobs:
         id: set-type
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # 수동 실행: 사용자 선택값 사용 (즉시 공개)
+            # 수동 실행: 사용자 선택값 사용
             echo "VIDEO_TYPE=${{ github.event.inputs.type }}" >> $GITHUB_ENV
-            echo "PUBLISH_AT=" >> $GITHUB_ENV
+            DELAY="${{ github.event.inputs.schedule_delay || 'immediate' }}"
+            if [ "$DELAY" = "immediate" ] || [ -z "$DELAY" ]; then
+              echo "PUBLISH_AT=" >> $GITHUB_ENV
+            else
+              # schedule_delay 값에서 분 단위로 변환
+              PUBLISH_AT=$(python3 -c "
+          from datetime import datetime, timedelta, timezone
+          kst = timezone(timedelta(hours=9))
+          now = datetime.now(kst)
+          delay = '$DELAY'
+          if delay == '30min':
+              minutes = 30
+          elif delay.endswith('hour'):
+              minutes = int(delay.replace('hour', '')) * 60
+          else:
+              minutes = 0
+          if minutes > 0:
+              target = now + timedelta(minutes=minutes)
+              print(target.strftime('%Y-%m-%dT%H:%M:%S+09:00'))
+          else:
+              print('')
+          ")
+              echo "PUBLISH_AT=$PUBLISH_AT" >> $GITHUB_ENV
+              if [ -n "$PUBLISH_AT" ]; then
+                echo "📅 예약 업로드: $PUBLISH_AT ($DELAY 후)"
+              fi
+            fi
           elif [ "${{ github.event.schedule }}" = "23 22 * * *" ]; then
             # 타겟: 12:00 KST
             echo "VIDEO_TYPE=shorts" >> $GITHUB_ENV
@@ -129,21 +169,45 @@ jobs:
       
       - name: Install FFmpeg and Korean fonts
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          export DEBIAN_FRONTEND=noninteractive
           
-          # Noto Sans CJK 폰트 (권장)
-          sudo apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra
+          # apt-get update (최대 3회 재시도, 2분 타임아웃)
+          for i in 1 2 3; do
+            echo "🔄 apt-get update 시도 $i/3..."
+            if timeout 120 sudo apt-get update -qq 2>/dev/null; then
+              echo "✅ apt-get update 성공"
+              break
+            fi
+            if [ $i -eq 3 ]; then
+              echo "⚠️ apt-get update 3회 실패 — 캐시된 패키지로 진행"
+            fi
+            sleep 5
+          done
           
-          # Nanum 폰트 (대체용)
-          sudo apt-get install -y fonts-nanum fonts-nanum-coding
+          # FFmpeg + 한국어 폰트 설치 (한 번에, 5분 타임아웃, 3회 재시도)
+          # fonts-noto-cjk-extra 제외 (수백 MB로 설치 시간 과다)
+          for i in 1 2 3; do
+            echo "🔄 패키지 설치 시도 $i/3..."
+            if timeout 300 sudo apt-get install -y --no-install-recommends \
+              ffmpeg fonts-noto-cjk fonts-nanum 2>&1; then
+              echo "✅ 패키지 설치 성공"
+              break
+            fi
+            if [ $i -eq 3 ]; then
+              echo "❌ 패키지 설치 실패"
+              exit 1
+            fi
+            sleep 10
+          done
           
-          # 폰트 캐시 업데이트
-          sudo fc-cache -fv
+          # 폰트 캐시 업데이트 (1분 타임아웃)
+          timeout 60 sudo fc-cache -f 2>/dev/null || true
           
-          # 설치된 한글 폰트 확인
+          # 설치 확인
+          echo "=== FFmpeg 버전 ==="
+          ffmpeg -version | head -1 || echo "⚠️ FFmpeg not found"
           echo "=== 설치된 한글 폰트 ==="
-          fc-list | grep -i "noto\|nanum" || echo "No fonts found"
+          fc-list | grep -i "noto\|nanum" | head -5 || echo "⚠️ No fonts found"
       
       - name: Install dependencies
         run: |
